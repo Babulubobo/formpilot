@@ -1004,6 +1004,129 @@ try {
   assert.equal(await demo.locator('textarea,input[type=text],input:not([type])').evaluateAll(nodes => nodes.every(node => node.value === '')), true);
   assert.deepEqual(errors, []);
   console.log('PASS: IndiaBIX split-wrapper choices reach JEV as distinct readable labels, select the matching radios, stop at submit, and exclude search, scratchpads, hidden answers and public feedback');
+
+  await context.unroute('https://api.typesafe.ai/**');
+  await context.unroute('https://api.deepseek.com/**');
+  // Unbranded layouts: no site-specific class or ID appears in the scanner.
+  const structureUrl = 'http://127.0.0.1:4173/quiz/unseen-layouts.html';
+  const structureExpected = [
+    { label: 'Which letter comes first?', options: ['A', 'B', 'C'] },
+    { label: 'Which fruit is yellow?', options: ['Banana', 'Plum', 'Lime'] },
+    { label: 'Which number is even?', options: ['Four', 'Five', 'Seven'] },
+    { label: 'Select a direction.', options: ['North', 'South', 'West'] },
+    { label: 'Choose a color.', options: ['Red', 'Green'] },
+  ];
+  const structureCalls = [], structuredAnswers = [];
+  await context.route(structureUrl, route => route.fulfill({ contentType: 'text/html; charset=utf-8', body: `<!doctype html>
+    <html><meta charset="utf-8"><title>Unseen structures</title><style>.columns{display:grid;grid-template-columns:repeat(3,100px)}.chosen{font-weight:bold}section{margin:24px}</style><body>
+    <nav><button>Account</button><button>Home</button></nav><form role="search"><input placeholder="Search"></form>
+    <section><h4 id="aria-prompt">Which letter comes first?</h4><div role="radiogroup" aria-labelledby="aria-prompt">
+      <div role="radio" tabindex="0" aria-checked="false">A</div><div role="radio" tabindex="0" aria-checked="false">B</div><div role="radio" tabindex="0" aria-checked="false">C</div></div></section>
+    <fieldset><legend>Which fruit is yellow?</legend><div class="columns"><span>Banana</span><span>Plum</span><span>Lime</span>
+      <input type="radio" name="opaque_123" value="0"><input type="radio" name="opaque_123" value="1"><input type="radio" name="opaque_123" value="2"></div></fieldset>
+    <section><h4>Which number is even?</h4><div><button type="button" aria-pressed="false">Four</button><button type="button" aria-pressed="false">Five</button><button type="button" aria-pressed="false">Seven</button></div></section>
+    <section><h4>Select a direction.</h4><ul><li><a href="#">North</a></li><li><a href="#">South</a></li><li><a href="#">West</a></li></ul></section>
+    <fieldset><legend>Choose a color.</legend><label><input type="radio" name="paint" style="display:none" value="red">Red</label><label><input type="radio" name="paint" style="display:none" value="green">Green</label></fieldset>
+    <aside><p>Article tools</p><div><button type="button">Print</button><button type="button">Bookmark</button></div></aside>
+    <div hidden>SECRET_HIDDEN_ANSWER <input type="radio" name="hidden"></div><script>
+    document.querySelectorAll('[role=radio]').forEach(node => node.onclick = () => {
+      node.parentElement.querySelectorAll('[role=radio]').forEach(option => option.setAttribute('aria-checked', String(option === node)));
+    });
+    document.querySelectorAll('button[aria-pressed]').forEach(node => node.onclick = () => {
+      node.parentElement.querySelectorAll('button').forEach(option => option.setAttribute('aria-pressed', String(option === node)));
+    });
+    document.querySelectorAll('li a').forEach(node => node.onclick = event => { event.preventDefault();
+      node.closest('ul').querySelectorAll('a').forEach(option => option.classList.toggle('selected', option === node));
+    });
+    </script></body></html>` }));
+  await context.route('https://api.typesafe.ai/**', async route => {
+    const request = route.request().postDataJSON();
+    if (request.state.regions) {
+      structureCalls.push(request);
+      const answers = {};
+      request.state.regions.forEach((region, index) => {
+        const expected = structureExpected.find(question => region.prompts.some(text => text.text === question.label));
+        if (!expected) { answers[`s${index}`] = { type: 'choice', choice: 'ignore', confidence: 1 }; return; }
+        // The first uncertain scan must expand once, not pass bad labels to the answer model.
+        answers[`s${index}`] = { type: 'choice', choice: structureCalls.length === 1 ? 'none' : region.prompts.find(text => text.text === expected.label).id, confidence: 1 };
+        region.options.forEach((option, i) => {
+          const text = option.texts.find(text => text.text === expected.options[i]);
+          assert.ok(text, `missing source text ${expected.options[i]}`);
+          answers[`s${index}o${i}`] = { type: 'choice', choice: text.id, confidence: 1 };
+        });
+      });
+      assert.doesNotMatch(JSON.stringify(request.state), /SECRET_HIDDEN_ANSWER/);
+      await route.fulfill({ json: { answers } });
+    } else {
+      structuredAnswers.push(request);
+      assert.equal(request.state.fields.length, 5);
+      assert.doesNotMatch(JSON.stringify(request.state.fields), /opaque_123|Article tools|Bookmark|Print|SECRET_HIDDEN_ANSWER/);
+      await route.fulfill({ json: { answers: Object.fromEntries(request.state.fields.map((_, i) => [`q${i}`, { type: 'choice', choice: 'c0', confidence: 1 }])) } });
+    }
+  });
+  await context.route('https://api.deepseek.com/**', async route => { await route.abort(); assert.fail('No text-model fallback expected'); });
+  await demo.goto(structureUrl);
+  await demo.bringToFront();
+  await panel.evaluate(() => { document.querySelector('#auto-submit').checked = false; document.querySelector('#start-btn').click(); });
+  await panel.waitForFunction(() => !document.querySelector('#start-btn').disabled, null, { timeout: 15000 });
+  assert.equal(structuredAnswers.length, 1, await panel.locator('#status').textContent());
+  assert.deepEqual(structuredAnswers[0].state.fields.map(field => ({ label: field.label, options: field.options.map(option => option.label) })), structureExpected);
+  assert.equal(structureCalls.length, 2, 'only uncertain regions should get one expanded retry');
+  assert.equal(structureCalls[0].state.regions.length, 4, 'ARIA group with explicit semantics should use the fast path');
+  assert.equal(structureCalls[1].state.regions.length, 3, 'ignored article tools should remain cached');
+  assert.equal(await demo.locator('input:checked,[aria-checked=true],[aria-pressed=true],a.selected').count(), 5);
+  await panel.evaluate(() => document.querySelector('#start-btn').click());
+  await panel.waitForFunction(() => !document.querySelector('#start-btn').disabled, null, { timeout: 15000 });
+  assert.equal(structureCalls.length, 2, 'unchanged DOM should reuse structure decisions across starts');
+  assert.equal(structuredAnswers.length, 1, 'existing choices must not be answered again');
+  // Changed text invalidates only its local association and rejects stale bindings.
+  const changedRegion = await worker.evaluate(async () => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => { document.querySelector('fieldset legend').textContent = 'Which fruit is purple?'; } });
+    return (await chrome.tabs.sendMessage(tab.id, { type: 'JEV_SCAN' })).structureCandidates;
+  });
+  assert.equal(changedRegion.length, 1);
+  const old = structureCalls[1].state.regions.find(region => region.currentLabel === 'Which fruit is yellow?');
+  const rejected = await worker.evaluate(async old => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    return chrome.tabs.sendMessage(tab.id, { type: 'JEV_RESOLVE_STRUCTURE', resolutions: [{ id: old.id, revision: old.revision, prompt: old.prompts[0].id, options: [] }] });
+  }, old);
+  assert.equal(rejected.ok, false);
+  assert.match(rejected.error, /结构发生变化/);
+  assert.deepEqual(errors, []);
+  console.log('PASS: unbranded ARIA, split-column, button and link choices use semantic binding; unknown tools are ignored, low confidence expands once, selections persist, cache is local and stale structure is rejected');
+
+  const clozeUrl = 'http://127.0.0.1:4173/quiz/inline-gaps.html';
+  await context.route(clozeUrl, route => route.fulfill({ contentType: 'text/html; charset=utf-8', body: `<!doctype html><html><body>
+    <div>1. Our cat (sleep) <span><input type="text"></span> while the birds (sing) <span><input type="text"></span>.<br><br>
+    2. They <select><option value="">Choose</option><option value="0">walk</option><option value="1">walks</option></select> home.</div></body></html>` }));
+  await demo.goto(clozeUrl);
+  await demo.bringToFront();
+  const cloze = await worker.evaluate(async () => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
+    return chrome.tabs.sendMessage(tab.id, { type: 'JEV_SCAN' });
+  });
+  assert.equal(cloze.structureCandidates.length, 3);
+  assert.deepEqual(cloze.structureCandidates.map(region => region.prompts[0].text), [
+    '1. Our cat (sleep) [THIS BLANK] while the birds (sing) [OTHER BLANK] .',
+    '1. Our cat (sleep) [OTHER BLANK] while the birds (sing) [THIS BLANK] .',
+    '2. They [THIS BLANK] home.',
+  ]);
+  const clozeBindings = cloze.structureCandidates.map(region => ({ id: region.id, revision: region.revision, prompt: region.prompts[0].id,
+    options: region.options.map(option => ({ id: option.id, textId: option.texts[0].id })) }));
+  const boundCloze = await worker.evaluate(async resolutions => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const blocked = await chrome.tabs.sendMessage(tab.id, { type: 'JEV_APPLY', fieldId: resolutions[0].id, value: 'must not be written' });
+    const resolved = await chrome.tabs.sendMessage(tab.id, { type: 'JEV_RESOLVE_STRUCTURE', resolutions });
+    return { blocked, resolved, page: await chrome.tabs.sendMessage(tab.id, { type: 'JEV_SCAN' }) };
+  }, clozeBindings);
+  assert.equal(boundCloze.blocked.ok, false, 'unresolved controls must reject direct writes too');
+  assert.equal(boundCloze.resolved.ok, true);
+  assert.equal(boundCloze.page.structureCandidates.length, 0);
+  assert.deepEqual(boundCloze.page.fields[2].options.map(option => option.label), ['walk', 'walks']);
+  assert.equal(await demo.locator('input').evaluateAll(nodes => nodes.every(node => !node.value)), true);
+  console.log('PASS: inline questions preserve surrounding text and distinguish multiple blanks; native select labels remain intact and incomplete bindings cannot be written');
 } finally {
   await context?.close();
   server?.kill();

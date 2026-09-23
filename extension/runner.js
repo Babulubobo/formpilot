@@ -29,6 +29,7 @@ export async function runForm({ scan, apply, click, plan, signal, autoNext, auto
     if (new URL(page.url).origin !== origin) return finish('needs-review', t('页面跳转到其他网站，请重新识别并开始。', 'The page moved to another website. Scan it again to restart.'));
     onPage(page);
     if (page.completed) return finish('complete', completionMessage(page));
+    if (page.structureCandidates?.length) return finish('needs-review', t('有 {count} 个区域的题干或选项仍未识别完整，已停止答题。', 'Prompts or options remain incomplete in {count} regions. Answering has stopped.', { count: page.structureCandidates.length }));
     if (!page.fields.length) {
       const starts = page.buttons.filter(button => button.kind === 'start');
       if (page.quiz && !startedQuiz && starts.length === 1) {

@@ -29,6 +29,8 @@ export const translate = value => messages.has(value) ? format(messages.get(valu
 // The injected script is not an ES module. Translate its own messages here;
 // native browser validation messages and webpage text are kept as received.
 const pageMessages = [
+  ['识别期间页面结构发生变化，请重新开始。', 'The page structure changed during recognition. Please restart.'],
+  ['题干或选项尚未识别完整，未执行填写。', 'The prompt or options are incomplete. Nothing was filled.'],
   ['已识别测验入口，开始填写后会先打开题目。', 'Quiz start detected. Filling will open the questions first.'],
   ['已忽略站内搜索框，当前未识别到题目或表单。请确认测验已开始。', 'Site search boxes were ignored. No questions or forms were found. Check that the quiz has started.'],
   ['当前仅支持主页面，不读取 iframe 内的表单。', 'Only the main page is supported; forms inside iframes are not read.'],

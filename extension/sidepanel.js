@@ -1,4 +1,4 @@
-import { DEMO_PROFILE, demoPlan, livePlan } from './brain.js';
+import { DEMO_PROFILE, demoPlan, livePlan, resolveStructure } from './brain.js';
 import { runForm } from './runner.js';
 import { getLanguage, setLanguage, t, translate, pageMessage, raw } from './i18n.js';
 
@@ -216,7 +216,8 @@ async function scanPage(expected) {
     resetResults();
     const page = await scan();
     render(page);
-    status(page.notice || (page.fields.length ? t('识别到 {count} 个字段，可以开始填写。', 'Found {count} fields. Ready to fill.', { count: page.fields.length }) : t('没有识别到可填写字段。', 'No fillable fields found.')));
+    status(page.structureCandidates?.length ? t('有 {count} 个区域需要核对题干与选项，开始填写时会自动识别。', '{count} regions need prompt/option checks. They will be resolved when filling starts.', { count: page.structureCandidates.length })
+      : page.notice || (page.fields.length ? t('识别到 {count} 个字段，可以开始填写。', 'Found {count} fields. Ready to fill.', { count: page.fields.length }) : t('没有识别到可填写字段。', 'No fillable fields found.')));
   } catch (error) { status(errorMessage(error), 'error'); }
   finally { setBusy(false); }
 }
@@ -259,8 +260,28 @@ async function begin() {
     await selectTarget();
     status(settings.mode === 'demo' ? t('正在运行本地演示…', 'Running the local demo…') : t('正在填写…', 'Filling the form…'));
     log(settings.mode === 'demo' ? t('演示规则：本次不会调用 AI。', 'Local demo: no AI calls.') : t('真实模式：将调用 TypeSafe / DeepSeek。', 'AI mode: using TypeSafe / DeepSeek.'));
+    const scanForRun = async () => {
+      let page = await scan();
+      if (settings.mode !== 'live' || page.completed) return page;
+      for (let attempt = 0; attempt < 2 && page.structureCandidates?.length; attempt++) {
+        controller.signal.throwIfAborted();
+        const resolutions = await resolveStructure(page.structureCandidates, settings, { signal: controller.signal, onEvent: log });
+        controller.signal.throwIfAborted();
+        if (resolutions.length) {
+          const result = await send({ type: 'JEV_RESOLVE_STRUCTURE', resolutions });
+          if (!result.ok) throw new Error(result.error);
+        }
+        page = await scan();
+        if (page.structureCandidates?.length && attempt === 0) {
+          log(t('识别信息不足，正在扩大局部扫描范围…', 'Not enough structural evidence. Expanding the local scan…'));
+          await send({ type: 'JEV_EXPAND_SCAN', ids: page.structureCandidates.map(region => region.id) });
+          page = await scan();
+        }
+      }
+      return page;
+    };
     const result = await runForm({
-      scan, apply: (fieldId, value) => send({ type: 'JEV_APPLY', fieldId, value }),
+      scan: scanForRun, apply: (fieldId, value) => send({ type: 'JEV_APPLY', fieldId, value }),
       click: buttonId => send({ type: 'JEV_CLICK', buttonId }),
       plan: page => settings.mode === 'demo' ? demoPlan(page, settings.profile)
         : livePlan(page, settings.profile, settings, { signal: controller.signal, onEvent: log }),

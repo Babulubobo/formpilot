@@ -6,6 +6,10 @@
   let sequence = 0;
   let fields = new Map();
   let buttons = new Map();
+  const structures = new Map();
+  const expanded = new Set();
+  let pending = new Map();
+  let revision = 0;
   const idFor = (node) => {
     if (!ids.has(node)) ids.set(node, `jev-${++sequence}`);
     return ids.get(node);
@@ -21,7 +25,9 @@
     const style = getComputedStyle(node);
     return !['hidden', 'collapse'].includes(style.visibility) && style.display !== 'none' && style.opacity !== '0' && node.getClientRects().length > 0;
   };
-  const editable = (node) => visible(node) && !node.matches(':disabled, [aria-disabled="true"]') && !node.readOnly;
+  const editable = (node) => (visible(node) || node.matches('input[type="radio"], input[type="checkbox"]')
+    && !node.closest('[hidden], [inert], [aria-hidden="true"]') && [...node.labels].some(visible))
+    && !node.matches(':disabled, [aria-disabled="true"]') && !node.readOnly;
   const searchField = (node) => node.matches('input[type="search"]') || node.closest('search, [role="search"]') ||
     (node.tagName === 'INPUT' && (/^(s|search)$/i.test(node.name) || /^(search(?: articles?)?|搜索(?:文章)?)[\s.…]*$/i.test(node.getAttribute('aria-label') || node.placeholder || '')));
   const excludedText = 'nav, footer, [role="navigation"], [role="contentinfo"], script, style, noscript, input, select, textarea, button, option, output, [contenteditable]';
@@ -118,29 +124,154 @@
       (['radio', 'checkbox'].includes(node.type) ? choiceLabel(node) : '') ||
       clean(node.getAttribute('placeholder')) || legendFor(node) || clean(node.name) || '未命名字段';
   };
-  const groupLabel = (node, nodes) => legendFor(node) || headingFor(node, nodes) || labelFor(node);
+  const groupLabel = (node, nodes) => {
+    const group = node.closest('[role="radiogroup"]');
+    return (group && explicitLabel(group)) || legendFor(node) || headingFor(node, nodes) || labelFor(node);
+  };
   const kindFor = (node) => {
+    if (node.matches('[role="radio"]')) return 'radio';
     if (node.tagName === 'TEXTAREA') return 'textarea';
     if (node.tagName === 'SELECT') return node.multiple ? null : 'select';
     return ['text', 'email', 'tel', 'url', 'number', 'date', 'radio', 'checkbox'].includes(node.type) ? node.type : null;
   };
   const optionsFor = (nodes) => nodes.map((node) => ({
     id: idFor(node),
-    label: node.tagName === 'OPTION' ? clean(node.label || node.textContent) : labelFor(node),
+    label: node.tagName === 'OPTION' ? clean(node.label || node.textContent)
+      : node.matches('[role="radio"]') && node.tagName !== 'INPUT' ? explicitLabel(node) || sourceText(node) : labelFor(node),
   }));
-  const valueFor = ({ node, type, nodes, quiz }) => {
+  const valueFor = ({ node, type, nodes, quiz, custom }) => {
     if (type === 'checkbox') return node.checked;
     if (type === 'radio') {
-      const checked = nodes.find((option) => quiz ? option.matches('.correct, .incorrect') : option.checked);
+      const checked = nodes.find((option) => quiz ? option.matches('.correct, .incorrect') : custom
+        ? option.matches('[aria-checked="true"], [aria-pressed="true"], [data-selected="true"], .selected, .active') : option.checked);
       return checked ? idFor(checked) : '';
     }
     if (type === 'select') return node.value && node.selectedOptions.length ? idFor(node.selectedOptions[0]) : '';
     return node.value;
   };
 
+  const interactive = 'input, select, textarea, button, a[href], [role="radio"], [role="button"]';
+  const nonQuestion = 'nav, header, footer, [role="navigation"], [role="search"], [role="toolbar"]';
+  const commonParent = nodes => {
+    let parent = nodes[0].parentElement;
+    while (parent && !nodes.every(node => parent.contains(node))) parent = parent.parentElement;
+    return parent || document.body;
+  };
+  const explicitLabel = node => clean(node.getAttribute('aria-label')) || clean((node.getAttribute('aria-labelledby') || '').split(/\s+/)
+    .map(id => visibleText(document.getElementById(id))).join(' '));
+  const sourceText = node => node.nodeType === Node.TEXT_NODE
+    ? visible(node.parentElement) ? clean(node.textContent) : ''
+    : visible(node) ? (node.innerText || '').trim().slice(0, 2000) : '';
+  const suspicious = (text, node) => !text || text === '未命名字段' || text === node.name || text === node.id || /^(?:chk|opt|input|field|radio)[\w-]*\d+$/i.test(text);
+
+  function inlinePrompt(node) {
+    if (!node.matches('input:not([type=radio]):not([type=checkbox]),textarea,select')) return null;
+    let anchor = node;
+    while (anchor.parentElement?.matches('span,label') && anchor.parentElement.querySelectorAll('input,textarea,select').length === 1) anchor = anchor.parentElement;
+    const boundary = part => part.nodeType === Node.ELEMENT_NODE && (part.matches('br,hr') || !['inline', 'inline-block', 'contents'].includes(getComputedStyle(part).display));
+    const parts = [anchor];
+    for (let part = anchor.previousSibling; part && !boundary(part) && parts.length < 40; part = part.previousSibling) parts.unshift(part);
+    for (let part = anchor.nextSibling; part && !boundary(part) && parts.length < 80; part = part.nextSibling) parts.push(part);
+    const read = part => {
+      if (part === node) return ' [THIS BLANK] ';
+      if (part.nodeType === Node.TEXT_NODE) return part.textContent;
+      if (part.nodeType !== Node.ELEMENT_NODE || !visible(part) || part.matches('script,style,button')) return '';
+      if (part.matches('input,select,textarea')) return ' [OTHER BLANK] ';
+      return [...part.childNodes].map(read).join('');
+    };
+    const text = clean(parts.map(read).join(''));
+    return text.replace(/\[(?:THIS|OTHER) BLANK\]/g, '').trim() ? { node: anchor, text, prompt: true } : null;
+  }
+
+  function structureFor(field, entry) {
+    const { nodes } = entry;
+    const wide = expanded.has(field.id);
+    let root = commonParent(nodes);
+    // Keep evidence local to one group; expanded scans add surrounding text,
+    // but never source candidates from another question's controls.
+    for (let i = 0; i < (wide ? 3 : 1) && root.parentElement && root.parentElement !== document.body; i++) {
+      const others = [...root.parentElement.querySelectorAll(interactive)]
+        .filter(node => editable(node) && node.type !== 'hidden' && !nodes.includes(node));
+      if (others.length) break;
+      root = root.parentElement;
+    }
+    const sources = new Map();
+    const inline = inlinePrompt(entry.node);
+    if (inline) sources.set(`${field.id}-prompt`, inline);
+    const add = node => {
+      if (!node || node.closest?.('script,style,noscript,' + nonQuestion)) return;
+      const text = sourceText(node);
+      if (text && sources.size < (wide ? 120 : 60)) sources.set(idFor(node), { node, text });
+    };
+    const collect = parent => {
+      if (!parent || !visible(parent) || parent.closest(nonQuestion)) return;
+      for (const node of [parent, ...parent.querySelectorAll('h1,h2,h3,h4,legend,p,pre,code,label,span,div,td,li,strong')]) {
+        if (!node.querySelector(interactive) && !node.closest('button,a,[role="radio"],[role="button"]')) add(node);
+        else for (const child of node.childNodes) if (child.nodeType === Node.TEXT_NODE) add(child);
+      }
+    };
+    collect(root);
+    for (let current = commonParent(nodes), depth = 0; current && depth < (wide ? 5 : 3); current = current.parentElement, depth++) {
+      let count = 0;
+      for (let previous = current.previousElementSibling; previous && count < (wide ? 4 : 1); previous = previous.previousElementSibling, count++) {
+        if (previous.querySelector(interactive) || previous.matches(interactive)) break;
+        collect(previous);
+      }
+    }
+    nodes.forEach(node => {
+      for (const label of node.labels || []) add(label);
+      for (const id of (node.getAttribute('aria-labelledby') || '').split(/\s+/)) if (id) add(document.getElementById(id));
+      if (entry.custom) add(node);
+    });
+    const position = (source, target) => {
+      const rect = (source.nodeType === Node.TEXT_NODE ? source.parentElement : source).getBoundingClientRect();
+      const base = target.getBoundingClientRect();
+      return { dx: Math.round(rect.x - base.x), dy: Math.round(rect.y - base.y) };
+    };
+    const texts = [...sources].map(([id, { node, text }]) => ({ id, text, ...position(node, nodes[0]) }));
+    const options = field.options ? field.options.map((option, index) => ({ id: option.id, currentLabel: option.label,
+      texts: entry.type === 'select' ? [{ id: option.id, text: option.label, dx: 0, dy: 0 }]
+        : [...sources].map(([id, source]) => ({ id, text: source.text, ...position(source.node, nodes[index] || nodes[0]) }))
+        .sort((a, b) => Math.abs(a.dy) * 3 + Math.abs(a.dx) - Math.abs(b.dy) * 3 - Math.abs(b.dx)).slice(0, wide ? 16 : 8),
+    })) : [];
+    const candidate = { id: field.id, custom: Boolean(entry.custom && !entry.node.matches('[role="radio"]')), currentLabel: field.label,
+      prompts: texts.filter(text => sources.get(text.id).prompt || !nodes.some(node => node.contains(sources.get(text.id).node))).slice(0, wide ? 32 : 16), options };
+    // Text and element identities determine freshness; scrolling/hovering must
+    // not invalidate cached associations or trigger another API call.
+    const key = JSON.stringify(candidate, (name, value) => ['dx', 'dy'].includes(name) ? undefined : value);
+    let cached = structures.get(field.id);
+    if (!cached || cached.key !== key) {
+      cached = { key, revision: ++revision };
+      structures.set(field.id, cached);
+    }
+    candidate.revision = cached.revision;
+    pending.set(field.id, candidate);
+    return { candidate, cached };
+  }
+
+  function resolveStructures(resolutions) {
+    scan(); // Rebuild evidence immediately before accepting a model result.
+    for (const resolution of resolutions) {
+      const candidate = pending.get(resolution.id);
+      if (!candidate || candidate.revision !== resolution.revision) throw new Error('识别期间页面结构发生变化，请重新开始。');
+      if (resolution.ignore && candidate.custom) {
+        structures.get(candidate.id).resolved = { ignore: true };
+        continue;
+      }
+      const prompt = candidate.prompts.find(text => text.id === resolution.prompt)?.text;
+      const options = candidate.options.map(option => ({ id: option.id,
+        label: option.texts.find(text => text.id === resolution.options?.find(value => value.id === option.id)?.textId)?.text }));
+      if (!prompt || options.some(option => !option.label || clean(option.label) === clean(prompt))
+        || (options.length && new Set(options.map(option => clean(option.label))).size !== options.length)) continue;
+      structures.get(candidate.id).resolved = { label: prompt, options };
+    }
+    return { ok: true };
+  }
+
   function scan() {
     fields = new Map();
     buttons = new Map();
+    pending = new Map();
     const demo = ['localhost', '127.0.0.1'].includes(location.hostname) && document.documentElement.dataset.jevDemo === 'true';
     // jQuery Quiz (used by Runoob) renders choices as links, not native radios.
     const quiz = document.querySelector('#quiz.quiz-container');
@@ -149,17 +280,20 @@
     const scanned = [];
     const errors = [];
     const visited = new Set();
-    const controls = Array.from((bixTest || scope).querySelectorAll(bixTest ? '.bix-tbl-options input[type="radio"]' : 'input, textarea, select'))
-      .filter(node => editable(node) && !searchField(node));
+    const controls = Array.from((bixTest || scope).querySelectorAll(bixTest ? '.bix-tbl-options input[type="radio"]' : 'input, textarea, select, [role="radio"]'))
+      .filter(node => editable(node) && !searchField(node) && !node.closest(nonQuestion));
     for (const node of controls) {
       if (visited.has(node)) continue;
       const type = kindFor(node);
       if (!type) continue;
+      const custom = node.matches('[role="radio"]') && node.tagName !== 'INPUT';
+      const group = node.closest('[role="radiogroup"]') || node.parentElement;
       const nodes = type === 'radio'
-        ? controls.filter((other) => other.type === 'radio' && (node.name ? other.name === node.name && other.form === node.form : other === node))
+        ? controls.filter((other) => custom ? other.matches('[role="radio"]') && group.contains(other)
+          : other.type === 'radio' && (node.name ? other.name === node.name && other.form === node.form : other === node))
         : [node];
       nodes.forEach((item) => visited.add(item));
-      const entry = { node, type, nodes };
+      const entry = { node, type, nodes, custom };
       const id = idFor(node);
       fields.set(id, entry);
       const field = {
@@ -179,7 +313,7 @@
       for (const key of ['min', 'max', 'pattern']) if (node.getAttribute(key)) constraints[key] = node.getAttribute(key);
       if (Object.keys(constraints).length) field.constraints = constraints;
       scanned.push(field);
-      if (!node.validity.valid || (field.required && (field.value === '' || field.value === false))) {
+      if (node.validity && !node.validity.valid || (field.required && (field.value === '' || field.value === false))) {
         errors.push({ fieldId: id, label: field.label, message: node.validationMessage || '请填写必填项。' });
       }
     }
@@ -205,9 +339,63 @@
       }
     }
 
+    if (!quiz && !bixTest) {
+      // Repeated clickable siblings are only candidates. A semantic decision
+      // must confirm they form a question before any of them can be clicked.
+      const used = new Set([...fields.values()].flatMap(entry => entry.nodes));
+      const clicks = [...scope.querySelectorAll('button, [role="button"], a[href="#"], a:not([href])')]
+        .filter(node => editable(node) && !node.closest(nonQuestion) && !used.has(node) && !(node.type === 'submit' && node.form));
+      const groups = new Set();
+      for (const click of clicks) {
+        for (let parent = click.parentElement, depth = 0; parent && parent !== document.body && depth < 3; parent = parent.parentElement, depth++) {
+          const nodes = clicks.filter(node => parent.contains(node));
+          if (nodes.length < 2) continue;
+          if (nodes.length > 12 || parent.querySelector('input,select,textarea,[role="radio"]') || nodes.some(node => used.has(node))) break;
+          const rows = [...parent.children].filter(child => nodes.some(node => child === node || child.contains(node)));
+          if (rows.length !== nodes.length || groups.has(parent)) break;
+          groups.add(parent);
+          nodes.forEach(node => used.add(node));
+          const id = idFor(nodes[0]);
+          const entry = { node: nodes[0], nodes, type: 'radio', custom: true };
+          fields.set(id, entry);
+          scanned.push({ id, label: groupLabel(nodes[0], nodes), type: 'radio', required: false, value: valueFor(entry), group: '', description: '',
+            options: nodes.map(node => ({ id: idFor(node), label: sourceText(node) })) });
+          break;
+        }
+      }
+    }
+
+    scanned.sort((a, b) => fields.get(a.id).node.compareDocumentPosition(fields.get(b.id).node) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1);
+    const candidates = [];
+    const promptCounts = new Map();
+    for (const field of scanned) if (field.type === 'radio') promptCounts.set(field.label, (promptCounts.get(field.label) || 0) + 1);
+    for (let index = scanned.length - 1; index >= 0; index--) {
+      const field = scanned[index], entry = fields.get(field.id);
+      const labels = field.options?.map(option => option.label) || [];
+      const issues = [];
+      if (suspicious(field.label, entry.node)) issues.push('missing_prompt');
+      if (field.type === 'radio' && (labels.includes(field.label) || promptCounts.get(field.label) > 1)) issues.push('ambiguous_prompt');
+      if (field.options && (new Set(labels).size !== labels.length || labels.some((label, i) => suspicious(label, entry.nodes[i] || entry.node)))) issues.push('unreadable_options');
+      if (entry.custom && !entry.node.matches('[role="radio"]')) issues.push('custom_choices');
+      if (!issues.length || entry.quiz) continue;
+      const { candidate, cached } = structureFor(field, entry);
+      if (cached.resolved?.ignore) {
+        scanned.splice(index, 1);
+        fields.delete(field.id);
+      } else if (cached.resolved) {
+        field.label = cached.resolved.label;
+        if (field.options) field.options = cached.resolved.options;
+      } else {
+        entry.unresolved = true;
+        field.scanIssues = issues;
+        candidates.push(candidate);
+      }
+    }
+
     const scannedButtons = [];
     for (const node of scope.querySelectorAll(bixTest ? '#btnStartTest, #btnSubmitTest' : 'button, input[type="submit"], input[type="button"], [role="button"], #quiz-start-btn, #quiz-next-btn, #quiz-finish-btn')) {
       if (!editable(node)) continue;
+      if ([...fields.values()].some(entry => entry.custom && entry.nodes.includes(node))) continue;
       const label = clean(node.getAttribute('aria-label')) || clean(node.innerText || node.value || node.textContent);
       if (!label) continue;
       // ponytail: explicit text covers ordinary forms; custom workflows need their own adapter.
@@ -215,7 +403,7 @@
         : quiz && node.id === 'quiz-next-btn' ? 'next'
         : (quiz && node.id === 'quiz-finish-btn') || (bixTest && node.id === 'btnSubmitTest') ? 'submit'
         : /^(next(?:\s+(?:step|page|question))?|continue|下一(?:步|页|题)|继续)[\s→›»]*$/i.test(label) ? 'next'
-        : node.type === 'submit' || /^(submit(?:\s+(?:application|form|response))?|send(?:\s+(?:application|response))?|提交(?:申请|表单|问卷)?|发送|完成|finish)[.!！。\s]*$/i.test(label) ? 'submit' : 'other';
+        : node.type === 'submit' && node.form || /^(submit(?:\s+(?:application|form|response))?|send(?:\s+(?:application|response))?|提交(?:申请|表单|问卷)?|发送|完成|finish)[.!！。\s]*$/i.test(label) ? 'submit' : 'other';
       const id = idFor(node);
       buttons.set(id, node);
       scannedButtons.push({ id, label, kind });
@@ -224,13 +412,14 @@
     if (scannedButtons.some(button => button.kind === 'start')) notices.push('已识别测验入口，开始填写后会先打开题目。');
     else if (!quiz && !bixTest && !scanned.length && Array.from(document.querySelectorAll('input')).some(node => editable(node) && searchField(node))) notices.push('已忽略站内搜索框，当前未识别到题目或表单。请确认测验已开始。');
     if (Array.from(document.querySelectorAll('iframe')).some(visible)) notices.push('当前仅支持主页面，不读取 iframe 内的表单。');
-    if (document.querySelector('[role="combobox"]:not(select), [role="textbox"]:not(input):not(textarea), [role="radio"]:not(input), [role="checkbox"]:not(input), select[multiple]')) notices.push('自定义控件与多选下拉框需要手动填写。');
+    if (document.querySelector('[role="combobox"]:not(select), [role="textbox"]:not(input):not(textarea), [role="checkbox"]:not(input), select[multiple]')) notices.push('自定义控件与多选下拉框需要手动填写。');
     return {
       url: location.href, title: document.title, context: quiz ? clean(quiz.querySelector('h1')?.innerText) : bixTest ? visibleText(document.querySelector('h1')) : contextFor(scanned), fields: scanned, buttons: scannedButtons,
       demo, quiz: Boolean(quiz || bixTest), completed: demo && document.documentElement.dataset.jevComplete === 'true' ||
         Boolean(bixTest && visibleText(document.querySelector('#testResultStats'))) ||
         Boolean(quiz?.classList.contains('quiz-results-state') && quiz.querySelector('#quiz-results-screen') && visible(quiz.querySelector('#quiz-results-screen'))),
       validity: { valid: errors.length === 0, errors },
+      structureCandidates: candidates.reverse(),
       ...(notices.length ? { notice: notices.join(' ') } : {}),
     };
   }
@@ -246,6 +435,7 @@
   async function apply(fieldId, value) {
     const entry = fields.get(fieldId);
     if (!entry || !editable(entry.node)) throw new Error('字段已变化或不可编辑，请重新扫描。');
+    if (entry.unresolved) throw new Error('题干或选项尚未识别完整，未执行填写。');
     const { node, type, nodes } = entry;
     if (type === 'checkbox') {
       if (typeof value !== 'boolean') throw new Error('复选框的值必须是布尔值。');
@@ -284,6 +474,15 @@
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message.type === 'JEV_SCAN') {
       try { sendResponse(scan()); } catch (error) { sendResponse({ error: error.message }); }
+      return false;
+    }
+    if (message.type === 'JEV_RESOLVE_STRUCTURE') {
+      try { sendResponse(resolveStructures(message.resolutions)); } catch (error) { sendResponse({ ok: false, error: error.message }); }
+      return false;
+    }
+    if (message.type === 'JEV_EXPAND_SCAN') {
+      for (const id of message.ids || []) expanded.add(id);
+      sendResponse({ ok: true });
       return false;
     }
     if (message.type === 'JEV_APPLY') {
