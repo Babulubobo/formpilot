@@ -1,6 +1,7 @@
 {
   "name": "jev-form-poc",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "demo": "node scripts/serve.mjs",

@@ -4,6 +4,7 @@
 
 ![Chrome 116+](https://img.shields.io/badge/Chrome-116%2B-444444?style=flat-square)
 ![Manifest V3](https://img.shields.io/badge/Manifest-V3-444444?style=flat-square)
+[![License: MIT](https://img.shields.io/badge/License-MIT-444444?style=flat-square)](LICENSE)
 
 [安装](#安装) · [开始使用](#开始使用) · [常见问题](#常见问题) · [开发文档](docs/DEVELOPMENT.md)
 
@@ -101,3 +102,11 @@ API Key、参考资料和设置保存在扩展的本机存储，不通过 Chrome
 本地运行、模型分工、扫描流程和测试方法见 [开发文档](docs/DEVELOPMENT.md)。
 
 遇到无法识别或操作的题目，可以 [提交 Issue](https://github.com/Babulubobo/formpilot/issues)，附上页面链接、扩展版本和侧栏执行记录。请先移除记录中的个人资料，不要附带 API Key。
+
+## 许可与免责声明
+
+本项目采用 [MIT License](LICENSE)，允许使用、复制、修改、分发及商业使用，须保留许可证与版权声明。
+
+FormPilot 按“现状”提供，AI 答案可能出错，网页自动化也可能发生误操作。请核对答案与提交设置；功能边界、第三方服务及责任限制见 [免责声明](DISCLAIMER.md)。
+
+本项目明确反对将 FormPilot 用于任何违法犯罪活动。请遵守适用法律法规、目标网站条款及考试、测验规则。
