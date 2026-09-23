@@ -1,6 +1,6 @@
 # FormPilot 开发文档
 
-[返回 README](../README.md)
+[返回中文 README](../README-zh.md)
 
 FormPilot 是 Chrome Manifest V3 侧栏扩展。生产运行没有 npm 依赖，不需要构建或本地浏览器代理；`extension/` 可直接加载。
 

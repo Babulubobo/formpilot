@@ -1,112 +1,114 @@
 # FormPilot
 
-**浏览器里的答题助手。** 读取网页题目和选项，用 AI 作答，直接在原网页完成选择与填写。
+**English** · [简体中文](README-zh.md)
+
+**An AI quiz assistant for your browser.** FormPilot reads questions and options, generates answers, and selects or fills responses directly on the page.
 
 ![Chrome 116+](https://img.shields.io/badge/Chrome-116%2B-444444?style=flat-square)
 ![Manifest V3](https://img.shields.io/badge/Manifest-V3-444444?style=flat-square)
 [![License: MIT](https://img.shields.io/badge/License-MIT-444444?style=flat-square)](LICENSE)
 
-[安装](#安装) · [开始使用](#开始使用) · [常见问题](#常见问题) · [开发文档](docs/DEVELOPMENT.md)
+[Installation](#installation) · [Get started](#get-started) · [FAQ](#faq) · [Developer guide (中文)](docs/DEVELOPMENT.md)
 
-## 特性
+## Features
 
-- **在原网页答题**：在 Chrome 侧栏启动，读取当前页面并操作题目控件，无需来回复制题目和答案。
-- **选择与文字作答**：识别单选、复选、下拉选项和文字输入框；支持知识题、填空与开放题。
-- **连续处理多页**：填完后寻找下一题或下一页，默认在最终提交前暂停；题目未完成时显示原因。
-- **参考资料可留空**：模型根据题目作答，也可补充背景、材料或回答要求，不用提前准备答案。
-- **保留已有答案**：不覆盖已经填写的内容，侧栏显示本次结果与执行记录，可随时停止。
-- **按习惯使用**：支持中文、英文，以及白天、黑夜、跟随系统三种外观。
+- **Answer on the page**: start from the Chrome side panel and let FormPilot interact with the questions, without copying them between the page and a chat.
+- **Choices and written answers**: supports radio buttons, checkboxes, dropdowns and text fields for knowledge questions, fill-in-the-blank exercises and open-ended responses.
+- **Continue across pages**: looks for the next question or page after filling. Pauses before the final submission by default and explains when a question remains unanswered.
+- **Optional reference details**: answers based on the questions. Add background, source material or instructions if useful; no prepared answers are needed.
+- **Keep existing answers**: preserves content you have already filled in, shows results and an activity log in the side panel, and lets you stop at any time.
+- **Choose your language and theme**: Chinese and English interfaces, with Light, Dark and System appearance settings.
 
-## 安装
+## Installation
 
-需要 **Chrome 116 或更新版本**。目前通过加载源码安装，无需构建，也无需安装 npm 依赖。
+Requires **Chrome 116 or later**. The extension is currently installed from source, with no build step or npm dependencies required.
 
-1. [下载源码 ZIP](https://github.com/Babulubobo/formpilot/archive/refs/heads/main.zip) 并解压，也可以在仓库页选择 **Code → Download ZIP**。
-2. 在 Chrome 地址栏输入 `chrome://extensions`，开启右上角的「开发者模式」。
-3. 点击「加载已解压的扩展程序」，选择解压目录里的 **`extension` 文件夹**。
-4. 在浏览器工具栏的扩展菜单中固定 **FormPilot**，方便打开侧栏。
+1. [Download the source ZIP](https://github.com/Babulubobo/formpilot/archive/refs/heads/main.zip) and extract it, or choose **Code → Download ZIP** on the repository page.
+2. Enter `chrome://extensions` in Chrome's address bar and enable **Developer mode** in the upper-right corner.
+3. Click **Load unpacked** and select the **`extension` folder** inside the extracted project.
+4. Pin **FormPilot** from the browser toolbar's extensions menu for easy access to the side panel.
 
-选择的是 `extension` 文件夹，不是 ZIP 文件或整个项目目录。
+Select the `extension` folder, not the ZIP file or the project root.
 
-## 开始使用
+## Get started
 
-1. 打开要作答的网页，点击工具栏的 **FormPilot** 图标。
-2. 展开「设置与资料」→「模型连接」，填入自己的 **TypeSafe API Key** 和 **DeepSeek API Key**。
-3. 在「运行选项」中选择「AI 自动填写」，点击「保存资料与设置」。参考资料可以全部留空。
-4. 点击 **「开始填写」**。无需先扫描；如果出现「授权此网站并扫描」，按 Chrome 提示允许访问当前网站。
-5. 在网页与侧栏查看结果。默认自动翻页，最终提交前会暂停，方便检查答案。
+1. Open the page you want to answer and click the **FormPilot** toolbar icon.
+2. Open **Settings & details → Model setup** and enter your **TypeSafe API Key** and **DeepSeek API Key**.
+3. Under **Run options**, select **AI autofill** and click **Save settings**. You can leave all reference details blank.
+4. Click **Fill form**. There is no need to scan first. If **Allow site & scan** appears, follow Chrome's prompt to allow access to the current site.
+5. Review the answers on the page and in the side panel. Auto-advance is enabled by default, with a pause before the final submission so you can check the results.
 
-设置会保存在当前浏览器，之后打开题目页即可开始。需要自动提交时，在运行选项中勾选「允许最终提交」；该选择只在当前侧栏会话中生效。
+Your settings are saved in this browser for future runs. To enable automatic submission, check **Allow submit** under Run options. This permission applies only to the current side panel session.
 
 <details>
-<summary>没有 API Key？先体验本地演示</summary>
+<summary>No API keys yet? Try the local demo</summary>
 
-安装 Node.js 后，在项目目录运行：
+Install Node.js, then run this command in the project directory:
 
 ```sh
 npm run demo
 ```
 
-打开 [本地演示问卷](http://127.0.0.1:4173/demo/)，点击 FormPilot 图标。在「运行选项」中选择「本地演示（不调用 AI）」，再到「参考资料」点击「载入示例资料」，然后开始填写。
+Open the [local demo form](http://127.0.0.1:4173/demo/) and click the FormPilot icon. Under **Run options**, select **Local demo (no AI)**. Open **Reference details**, click **Load sample**, then start filling.
 
-演示包含 2 页、16 道题，使用固定规则与虚构资料，不调用模型，不能代表 AI 的速度或准确率。
-
-</details>
-
-## 常见问题
-
-<details>
-<summary>必须先填写个人资料吗？</summary>
-
-资料全部选填。知识题、填空和开放题由模型根据题目回答；参考资料用来补充它无法知道的个人事实、项目背景或作答要求。无需预先写好答案，也可以只填一句「用英文简短回答」。未知的真实姓名、邮箱和经历不会编造。
+The demo contains 16 questions across 2 pages. It uses fixed rules and fictional details, makes no model calls, and does not represent AI speed or accuracy.
 
 </details>
 
+## FAQ
+
 <details>
-<summary>为什么选择题也会调用 DeepSeek？</summary>
+<summary>Do I need to fill in personal details first?</summary>
 
-TypeSafe 的 JEV 先判断题目和选项；遇到不确定或跳过的选择题，会把题干与全部选项交给 DeepSeek 再判断。文字题也由 DeepSeek 回答。具体调用原因可以在「执行记录」中查看。
-
-AI 模式需要配置自己的服务密钥，API 用量由对应服务计费；本地演示模式不调用这些服务。
+All reference details are optional. The models answer knowledge questions, fill-in-the-blank exercises and open-ended questions from the question content. Reference details supply personal facts, project background or instructions that the models would not otherwise know. You do not need to prepare answers; a short instruction such as "Keep answers brief and in English" is enough. Unknown real names, email addresses and personal history are not invented.
 
 </details>
 
 <details>
-<summary>为什么会暂停，或提示没有找到题目？</summary>
+<summary>Why does DeepSeek answer choice questions too?</summary>
 
-先确认打开的是普通网页，并通过工具栏图标授予当前页面权限；浏览器设置页等内部页面无法处理。
+TypeSafe's JEV evaluates questions and options first. If it is uncertain or skips a choice question, FormPilot sends the question and all its options to DeepSeek for another attempt. DeepSeek also answers text questions. You can see the reason for each call in the **Activity log**.
 
-题目结构不完整、选项未作答、填写结果无法确认或翻页按钮不明确时，任务会暂停，原因显示在侧栏。切换标签页或关闭侧栏也会停止任务，已填写的答案保留。处理问题后，再次点击「开始填写」会重新扫描。
-
-目前支持主页面中的原生表单控件、ARIA 单选组及部分按钮或链接式选项；尚不支持 iframe、Shadow DOM、图片或 Canvas 题目、验证码与文件上传。特殊布局仍可能漏检，模型答案也需要核对。
+AI mode requires your own service keys, and the respective providers charge for API usage. Local demo mode does not call these services.
 
 </details>
 
 <details>
-<summary>更新插件后，需要重新填 API Key 吗？</summary>
+<summary>Why did it pause, or fail to find any questions?</summary>
 
-不需要。用新版本文件更新原来的 `extension` 文件夹，在 `chrome://extensions` 中点击 FormPilot 卡片上的刷新按钮，再刷新题目网页、关闭并重新打开侧栏即可。
+Make sure you are on a regular web page and have granted access by clicking the toolbar icon. Internal browser pages, such as Chrome settings, cannot be processed.
 
-沿用同一个扩展安装时，设置与 Key 会保留。不要先卸载扩展；卸载会清除其本机数据。
+The task pauses if the question structure is incomplete, a choice is unanswered, a filled value cannot be verified, or the next-page button is ambiguous. The side panel shows the reason. Switching tabs or closing the side panel also stops the task while keeping answers already filled in. After addressing the issue, click **Fill form** again to rescan.
+
+FormPilot currently supports native form controls in the main page, ARIA radio groups, and some button- or link-based options. It does not yet support iframes, Shadow DOM, image or Canvas questions, CAPTCHAs, or file uploads. Unusual layouts may still be missed, and model answers need review.
 
 </details>
 
-## 数据与权限
+<details>
+<summary>Do I need to enter my API keys again after updating?</summary>
 
-API Key、参考资料和设置保存在扩展的本机存储，不通过 Chrome Sync 同步。AI 模式会把题目、选项、相关页面文字和参考资料发送给对应的模型服务；Key 仅用于对应服务的请求认证，不会嵌入网页。清空 Key 输入框并保存可将其移除。
+No. Update the files in the original `extension` folder, click the reload button on the FormPilot card at `chrome://extensions`, refresh the question page, then close and reopen the side panel.
 
-网站访问权限按需申请，可在 Chrome 的扩展详情中撤回。安装时不会直接获得全部网站的读写权限。
+Settings and keys are retained when you update the same extension installation. Do not uninstall it first: uninstalling clears its local data.
 
-## 开发与反馈
+</details>
 
-本地运行、模型分工、扫描流程和测试方法见 [开发文档](docs/DEVELOPMENT.md)。
+## Data and permissions
 
-遇到无法识别或操作的题目，可以 [提交 Issue](https://github.com/Babulubobo/formpilot/issues)，附上页面链接、扩展版本和侧栏执行记录。请先移除记录中的个人资料，不要附带 API Key。
+API keys, reference details and settings are stored locally by the extension and are not synced through Chrome Sync. AI mode sends questions, options, relevant page text and reference details to the corresponding model services. Keys are used only to authenticate requests to their respective services and are not embedded in web pages. To remove a key, clear its input and save.
 
-## 许可与免责声明
+Website access is requested as needed and can be revoked from Chrome's extension details page. Installing FormPilot does not automatically grant read and write access to every website.
 
-本项目采用 [MIT License](LICENSE)，允许使用、复制、修改、分发及商业使用，须保留许可证与版权声明。
+## Development and feedback
 
-FormPilot 按“现状”提供，AI 答案可能出错，网页自动化也可能发生误操作。请核对答案与提交设置；功能边界、第三方服务及责任限制见 [免责声明](DISCLAIMER.md)。
+See the [developer guide (中文)](docs/DEVELOPMENT.md) for local development, model responsibilities, the scanning flow and test instructions.
 
-本项目明确反对将 FormPilot 用于任何违法犯罪活动。请遵守适用法律法规、目标网站条款及考试、测验规则。
+If a question cannot be recognized or answered on the page, [open an issue](https://github.com/Babulubobo/formpilot/issues) with the page URL, extension version and side panel activity log. Remove personal details from the log first, and never include API keys.
+
+## License and disclaimer
+
+This project is licensed under the [MIT License](LICENSE), which permits use, copying, modification, distribution and commercial use, provided the license and copyright notice are retained.
+
+FormPilot is provided "as is". AI answers may be incorrect, and web automation may perform unintended actions. Review answers and submission settings. See the [disclaimer (中文)](DISCLAIMER.md) for limitations, third-party services and liability information.
+
+This project explicitly opposes using FormPilot for any illegal or criminal activity. Follow applicable laws, the target website's terms, and examination or quiz rules.
