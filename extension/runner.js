@@ -4,6 +4,9 @@ function checkStop(signal) { signal?.throwIfAborted(); }
 const signature = page => JSON.stringify([page.documentId, page.url, page.fields.map(f => [f.id, f.label, f.type, f.options])]);
 const fieldKey = (page, field) => `${page.documentId || page.url}:${field.id}`;
 const isBlank = field => field.value === '' || field.value == null;
+const completionMessage = page => page.demo
+  ? t('本地演示已完成，未向外部提交。', 'The local demo is complete. Nothing was submitted externally.')
+  : t('测验已完成，请在网页查看成绩。', 'The quiz is complete. Check your score on the webpage.');
 
 export async function runForm({ scan, apply, click, plan, signal, autoNext, autoSubmit,
   onEvent = () => {}, onPage = () => {}, onField = () => {}, wait = ms => new Promise(r => setTimeout(r, ms)) }) {
@@ -19,13 +22,32 @@ export async function runForm({ scan, apply, click, plan, signal, autoNext, auto
     });
   };
   let filled = 0;
+  let startedQuiz = false;
   const finish = (status, message) => ({ status, message, filled });
   for (let round = 0; round < 20; round++) {
     checkStop(signal);
     if (new URL(page.url).origin !== origin) return finish('needs-review', t('页面跳转到其他网站，请重新识别并开始。', 'The page moved to another website. Scan it again to restart.'));
     onPage(page);
-    if (page.completed) return finish('complete', t('本地演示已完成，未向外部提交。', 'The local demo is complete. Nothing was submitted externally.'));
-    if (!page.fields.length) return finish('needs-review', t('没有找到可填写字段，请检查当前页面。', 'No fillable fields were found. Please check the current page.'));
+    if (page.completed) return finish('complete', completionMessage(page));
+    if (!page.fields.length) {
+      const starts = page.buttons.filter(button => button.kind === 'start');
+      if (page.quiz && !startedQuiz && starts.length === 1) {
+        startedQuiz = true;
+        onEvent(t('正在打开测验题目…', 'Opening the quiz questions…'));
+        checkStop(signal);
+        const result = await click(starts[0].id);
+        if (!result.ok) return finish('needs-review', result.error || t('测验未能开始，请在网页中检查。', 'The quiz could not start. Check the webpage.'));
+        for (let attempt = 0; attempt < 20; attempt++) {
+          checkStop(signal);
+          await wait(250);
+          checkStop(signal);
+          page = await scan();
+          if (page.fields.length || page.completed || new URL(page.url).origin !== origin) break;
+        }
+        continue;
+      }
+      return finish('needs-review', page.notice || t('没有找到可填写字段，请检查当前页面。', 'No fillable fields were found. Please check the current page.'));
+    }
     for (const field of page.fields) {
       const key = fieldKey(page, field);
       if (!answers.has(key) && field.value !== '' && field.value != null && field.value !== false) {
@@ -108,7 +130,7 @@ export async function runForm({ scan, apply, click, plan, signal, autoNext, auto
       await wait(250);
       checkStop(signal);
       try { page = await scan(); } catch (error) { if (attempt === 19) throw error; else continue; }
-      if (page.completed) return finish('complete', t('本地演示已完成，未向外部提交。', 'The local demo is complete. Nothing was submitted externally.'));
+      if (page.completed) return finish('complete', completionMessage(page));
       if (signature(page) !== before) { changed = true; break; }
       if (page.validity?.errors?.length) return finish('needs-review', t('页面提示填写有误，请检查后继续。', 'The page reported invalid answers. Please review them before continuing.'));
     }

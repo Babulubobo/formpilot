@@ -29,6 +29,8 @@ export const translate = value => messages.has(value) ? format(messages.get(valu
 // The injected script is not an ES module. Translate its own messages here;
 // native browser validation messages and webpage text are kept as received.
 const pageMessages = [
+  ['已识别测验入口，开始填写后会先打开题目。', 'Quiz start detected. Filling will open the questions first.'],
+  ['已忽略站内搜索框，当前未识别到题目或表单。请确认测验已开始。', 'Site search boxes were ignored. No questions or forms were found. Check that the quiz has started.'],
   ['当前仅支持主页面，不读取 iframe 内的表单。', 'Only the main page is supported; forms inside iframes are not read.'],
   ['自定义控件与多选下拉框需要手动填写。', 'Custom controls and multi-select lists need to be filled manually.'],
   ['字段已变化或不可编辑，请重新扫描。', 'The field changed or is not editable. Scan again.'],
@@ -37,6 +39,7 @@ const pageMessages = [
   ['文本字段的值必须是字符串。', 'A text field value must be a string.'],
   ['页面更新了字段，请重新扫描确认填写结果。', 'The page replaced the field. Scan again to check the result.'],
   ['网页未保留填写结果，请重新扫描。', 'The page did not keep the answer. Scan again.'],
+  ['选项已记录，但测验操作区尚未就绪，请稍后继续。', 'The answer was recorded, but the quiz controls are not ready. Continue shortly.'],
   ['填写结果未通过网页校验。', 'The answer did not pass page validation.'],
   ['按钮已变化或不可点击，请重新扫描。', 'The button changed or cannot be clicked. Scan again.'],
 ];

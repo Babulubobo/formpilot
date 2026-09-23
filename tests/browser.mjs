@@ -845,6 +845,96 @@ try {
   assert.equal(jsDeepSeekInputs.length, 1);
   assert.deepEqual(errors, []);
   console.log('PASS: JavaScript question 11 recovers from JEV skip with one DeepSeek option-ID answer; native checked state and FormData agree, then the answer is posted on continue');
+
+  await context.unroute('https://api.typesafe.ai/**');
+  await context.unroute('https://api.deepseek.com/**');
+  // Original questions using the jQuery Quiz DOM observed on Runoob. Options
+  // are links; a clicked wrong answer is still recorded and must not be retried.
+  const customQuizUrl = 'http://127.0.0.1:4173/quiz/link-choices.html';
+  const customInputs = [];
+  const searchBoxes = '<form role="search"><input name="s" placeholder="搜索……"></form><input placeholder="搜索文章...">';
+  await context.route('http://127.0.0.1:4173/quiz/search-only.html', route => route.fulfill({
+    contentType: 'text/html; charset=utf-8', body: `<!doctype html><html><body>${searchBoxes}</body></html>`,
+  }));
+  await context.route(customQuizUrl, route => route.fulfill({ contentType: 'text/html; charset=utf-8', body: `<!doctype html>
+    <html lang="zh-CN"><meta charset="utf-8"><title>Link-choice quiz regression</title>
+    <style>.question-container,#quiz-controls,#quiz-results-screen,#quiz-finish-btn{display:none}a{display:block;padding:8px}</style>
+    <body>${searchBoxes}<form><label>评论邮箱<input type="email" required></label></form>
+    <div id="quiz" class="quiz-container quiz-start-state"><h1>代码练习</h1>
+      <div id="quiz-start-screen"><a href="#" id="quiz-start-btn">开始</a></div>
+      <div id="questions">
+        <div class="question-container"><p class="question">阅读代码：</p><pre>n = 1\nif n:\n    n += 2</pre><p>n 的最终值是？</p>
+          <ul class="answers"><li><a href="#" data-index="0">1</a></li><li><a href="#" data-index="1">3</a></li></ul></div>
+        <div class="question-container"><p class="question">第二题：len([8, 9]) 的结果是？</p>
+          <ul class="answers"><li><a href="#" data-index="0">2</a></li><li><a href="#" data-index="1">3</a></li></ul></div>
+      </div>
+      <div id="quiz-controls"><p id="quiz-response"></p><a href="#" id="quiz-next-btn">下一题</a><a href="#" id="quiz-finish-btn">完成</a></div>
+      <div id="quiz-results-screen"><p id="quiz-results">测验结果</p></div>
+    </div><script>
+      const quiz = document.getElementById('quiz'), cards = [...document.querySelectorAll('.question-container')];
+      window.quizClicks = { start: 0, choices: [], next: 0, finish: 0 };
+      let current = 0;
+      quiz.addEventListener('click', e => {
+        const link = e.target.closest('a'); if (!link) return; e.preventDefault();
+        if (link.id === 'quiz-start-btn') {
+          quizClicks.start++; document.getElementById('quiz-start-screen').style.display = 'none'; cards[0].style.display = 'block';
+        } else if (link.hasAttribute('data-index')) {
+          if (cards[current].querySelector('.correct,.incorrect')) return;
+          quizClicks.choices.push([current, link.dataset.index]); link.classList.add(current ? 'correct' : 'incorrect');
+          document.getElementById('quiz-response').textContent = '网页评分反馈，不属于题干';
+          setTimeout(() => { document.getElementById('quiz-controls').style.display = 'block'; }, 160);
+        } else if (link.id === 'quiz-next-btn') {
+          quizClicks.next++; cards[current++].style.display = 'none'; cards[current].style.display = 'block';
+          document.getElementById('quiz-controls').style.display = 'none'; link.style.display = 'none';
+          document.getElementById('quiz-finish-btn').style.display = 'block';
+        } else if (link.id === 'quiz-finish-btn') {
+          quizClicks.finish++; cards[current].style.display = 'none'; quiz.classList.add('quiz-results-state');
+          document.getElementById('quiz-controls').style.display = 'none'; document.getElementById('quiz-results-screen').style.display = 'block';
+        }
+      });
+    </script></body></html>` }));
+  await context.route('https://api.typesafe.ai/**', async route => {
+    customInputs.push(route.request().postDataJSON());
+    await route.fulfill({ json: { answers: { q0: { type: 'choice', choice: 'c0', confidence: 1 } } } });
+  });
+  await context.route('https://api.deepseek.com/**', async route => {
+    await route.abort(); assert.fail('Confident custom quiz choices must not be sent as text fields');
+  });
+  await demo.goto('http://127.0.0.1:4173/quiz/search-only.html');
+  await demo.bringToFront();
+  await panel.evaluate(() => document.querySelector('#start-btn').click());
+  await panel.waitForFunction(() => !document.querySelector('#start-btn').disabled && document.querySelector('#status').textContent.includes('已忽略站内搜索框'));
+  assert.equal(customInputs.length, 0, 'search-only pages must make no model requests');
+  await demo.goto(customQuizUrl);
+  await demo.bringToFront();
+  await panel.evaluate(() => {
+    document.querySelector('#auto-next').checked = true;
+    document.querySelector('#auto-submit').checked = false;
+    document.querySelector('#start-btn').click();
+  });
+  await panel.waitForFunction(() => !document.querySelector('#start-btn').disabled && document.querySelector('#status').textContent.includes('等待你检查并提交'), null, { timeout: 15000 });
+  assert.equal(customInputs.length, 2);
+  for (const input of customInputs) {
+    assert.equal(input.state.fields.length, 1);
+    assert.equal(input.state.fields[0].type, 'radio');
+    assert.equal(input.state.fields[0].options.length, 2);
+    assert.doesNotMatch(JSON.stringify(input.state), /搜索|评论邮箱|网页评分反馈/);
+  }
+  assert.match(customInputs[0].state.fields[0].label, /if n:\n    n \+= 2/);
+  assert.doesNotMatch(customInputs[0].state.fields[0].label, /第二题/);
+  assert.match(customInputs[1].state.fields[0].label, /第二题/);
+  assert.notEqual(customInputs[0].state.fields[0].id, customInputs[1].state.fields[0].id);
+  assert.deepEqual(await demo.evaluate(() => quizClicks), { start: 1, choices: [[0, '0'], [1, '0']], next: 1, finish: 0 });
+  assert.equal(await demo.locator('input').evaluateAll(nodes => nodes.every(node => node.value === '')), true);
+  await panel.evaluate(() => {
+    document.querySelector('#auto-submit').checked = true;
+    document.querySelector('#start-btn').click();
+  });
+  await panel.waitForFunction(() => !document.querySelector('#start-btn').disabled && document.querySelector('#status').textContent.includes('测验已完成'), null, { timeout: 15000 });
+  assert.equal(customInputs.length, 2, 'continuing must preserve already graded link choices');
+  assert.equal(await demo.evaluate(() => quizClicks.finish), 1);
+  assert.deepEqual(errors, []);
+  console.log('PASS: site searches make no model calls; jQuery Quiz starts, reads visible code and link options, preserves graded selections, advances and respects the final-submit gate');
 } finally {
   await context?.close();
   server?.kill();

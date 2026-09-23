@@ -22,6 +22,8 @@
     return !['hidden', 'collapse'].includes(style.visibility) && style.display !== 'none' && style.opacity !== '0' && node.getClientRects().length > 0;
   };
   const editable = (node) => visible(node) && !node.matches(':disabled, [aria-disabled="true"]') && !node.readOnly;
+  const searchField = (node) => node.matches('input[type="search"]') || node.closest('search, [role="search"]') ||
+    (node.tagName === 'INPUT' && (/^(s|search)$/i.test(node.name) || /^(search(?: articles?)?|搜索(?:文章)?)[\s.…]*$/i.test(node.getAttribute('aria-label') || node.placeholder || '')));
   const excludedText = 'nav, footer, [role="navigation"], [role="contentinfo"], script, style, noscript, input, select, textarea, button, option, output, [contenteditable]';
   const visibleText = (node) => {
     if (!node || !visible(node) || node.closest(excludedText)) return '';
@@ -116,10 +118,10 @@
     id: idFor(node),
     label: node.tagName === 'OPTION' ? clean(node.label || node.textContent) : labelFor(node),
   }));
-  const valueFor = ({ node, type, nodes }) => {
+  const valueFor = ({ node, type, nodes, quiz }) => {
     if (type === 'checkbox') return node.checked;
     if (type === 'radio') {
-      const checked = nodes.find((option) => option.checked);
+      const checked = nodes.find((option) => quiz ? option.matches('.correct, .incorrect') : option.checked);
       return checked ? idFor(checked) : '';
     }
     if (type === 'select') return node.value && node.selectedOptions.length ? idFor(node.selectedOptions[0]) : '';
@@ -130,10 +132,13 @@
     fields = new Map();
     buttons = new Map();
     const demo = ['localhost', '127.0.0.1'].includes(location.hostname) && document.documentElement.dataset.jevDemo === 'true';
+    // jQuery Quiz (used by Runoob) renders choices as links, not native radios.
+    const quiz = document.querySelector('#quiz.quiz-container');
+    const scope = quiz || document;
     const scanned = [];
     const errors = [];
     const visited = new Set();
-    const controls = Array.from(document.querySelectorAll('input, textarea, select')).filter(editable);
+    const controls = Array.from(scope.querySelectorAll('input, textarea, select')).filter(node => editable(node) && !searchField(node));
     for (const node of controls) {
       if (visited.has(node)) continue;
       const type = kindFor(node);
@@ -167,24 +172,51 @@
       }
     }
 
+    if (quiz) {
+      for (const node of quiz.querySelectorAll('.question-container')) {
+        if (!visible(node)) continue;
+        const answers = node.querySelector(':scope > .answers');
+        const nodes = Array.from(answers?.querySelectorAll('a[data-index]') || []).filter(editable);
+        if (!nodes.length) continue;
+        // Read only the visible prompt, including preformatted code. Never read
+        // the site's question JSON, hidden questions or answer explanations.
+        const label = Array.from(node.childNodes).filter(part => part !== answers).map(part =>
+          part.nodeType === Node.TEXT_NODE ? part.textContent : part.nodeType === Node.ELEMENT_NODE && visible(part) ? part.innerText : '').join('\n').trim().slice(0, 4000);
+        if (!label) continue;
+        const id = idFor(node);
+        const entry = { node, nodes, type: 'radio', quiz: true };
+        fields.set(id, entry);
+        scanned.push({ id, label, type: 'radio', required: true, value: valueFor(entry),
+          options: nodes.map(option => ({ id: idFor(option), label: clean(option.innerText) })),
+          group: clean(quiz.querySelector('h1')?.innerText), description: '',
+        });
+      }
+    }
+
     const scannedButtons = [];
-    for (const node of document.querySelectorAll('button, input[type="submit"], input[type="button"], [role="button"]')) {
+    for (const node of scope.querySelectorAll('button, input[type="submit"], input[type="button"], [role="button"], #quiz-start-btn, #quiz-next-btn, #quiz-finish-btn')) {
       if (!editable(node)) continue;
       const label = clean(node.getAttribute('aria-label')) || clean(node.innerText || node.value || node.textContent);
       if (!label) continue;
       // ponytail: explicit text covers ordinary forms; custom workflows need their own adapter.
-      const kind = /^(next(?:\s+(?:step|page|question))?|continue|下一(?:步|页|题)|继续)[\s→›»]*$/i.test(label) ? 'next'
+      const kind = quiz && node.id === 'quiz-start-btn' ? 'start'
+        : quiz && node.id === 'quiz-next-btn' ? 'next'
+        : quiz && node.id === 'quiz-finish-btn' ? 'submit'
+        : /^(next(?:\s+(?:step|page|question))?|continue|下一(?:步|页|题)|继续)[\s→›»]*$/i.test(label) ? 'next'
         : node.type === 'submit' || /^(submit(?:\s+(?:application|form|response))?|send(?:\s+(?:application|response))?|提交(?:申请|表单|问卷)?|发送|完成|finish)[.!！。\s]*$/i.test(label) ? 'submit' : 'other';
       const id = idFor(node);
       buttons.set(id, node);
       scannedButtons.push({ id, label, kind });
     }
     const notices = [];
+    if (scannedButtons.some(button => button.kind === 'start')) notices.push('已识别测验入口，开始填写后会先打开题目。');
+    else if (!quiz && !scanned.length && Array.from(document.querySelectorAll('input')).some(node => editable(node) && searchField(node))) notices.push('已忽略站内搜索框，当前未识别到题目或表单。请确认测验已开始。');
     if (Array.from(document.querySelectorAll('iframe')).some(visible)) notices.push('当前仅支持主页面，不读取 iframe 内的表单。');
     if (document.querySelector('[role="combobox"]:not(select), [role="textbox"]:not(input):not(textarea), [role="radio"]:not(input), [role="checkbox"]:not(input), select[multiple]')) notices.push('自定义控件与多选下拉框需要手动填写。');
     return {
-      url: location.href, title: document.title, context: contextFor(scanned), fields: scanned, buttons: scannedButtons,
-      demo, completed: demo && document.documentElement.dataset.jevComplete === 'true',
+      url: location.href, title: document.title, context: quiz ? clean(quiz.querySelector('h1')?.innerText) : contextFor(scanned), fields: scanned, buttons: scannedButtons,
+      demo, quiz: Boolean(quiz), completed: demo && document.documentElement.dataset.jevComplete === 'true' ||
+        Boolean(quiz?.classList.contains('quiz-results-state') && quiz.querySelector('#quiz-results-screen') && visible(quiz.querySelector('#quiz-results-screen'))),
       validity: { valid: errors.length === 0, errors },
       ...(notices.length ? { notice: notices.join(' ') } : {}),
     };
@@ -208,7 +240,7 @@
     } else if (type === 'radio') {
       const option = nodes.find((item) => idFor(item) === value);
       if (!option || !editable(option)) throw new Error('选项已变化或不可选择。');
-      if (!option.checked) option.click();
+      if (valueFor(entry) !== value) option.click();
     } else if (type === 'select') {
       const option = Array.from(node.options).find((item) => idFor(item) === value);
       if (!option || option.disabled || option.parentElement?.disabled || option.hidden) throw new Error('选项已变化或不可选择。');
@@ -222,7 +254,17 @@
     if (!node.isConnected) throw new Error('页面更新了字段，请重新扫描确认填写结果。');
     const actual = valueFor(entry);
     if (actual !== value) throw new Error('网页未保留填写结果，请重新扫描。');
-    if (!node.validity.valid) throw new Error(node.validationMessage || '填写结果未通过网页校验。');
+    if (entry.quiz) {
+      // Runoob fades this area in; advancing during that animation can leave
+      // the next question's controls hidden in jQuery's animation queue.
+      const controls = node.closest('#quiz').querySelector('#quiz-controls');
+      for (let attempt = 0; controls && attempt < 40; attempt++) {
+        if (visible(controls) && getComputedStyle(controls).opacity === '1') break;
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+      if (controls && (!visible(controls) || getComputedStyle(controls).opacity !== '1')) throw new Error('选项已记录，但测验操作区尚未就绪，请稍后继续。');
+    }
+    if (node.validity && !node.validity.valid) throw new Error(node.validationMessage || '填写结果未通过网页校验。');
     return { ok: true, value: actual };
   }
 
