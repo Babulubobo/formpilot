@@ -104,6 +104,25 @@ npm run test:browser
 
 真实 API Key 只在扩展设置中填写；独立示例 `jev.mjs` 从环境变量 `TYPESAFE_API_KEY` 读取。环境文件、私钥、本地工具配置、日志和测试输出已加入 Git 忽略规则，不应提交实际凭据。
 
+## 发布 Release
+
+GitHub Release 使用与 `extension/manifest.json` 一致的版本标签（如 `v0.2.0`），更新说明保存在 `docs/releases/`。安装包固定命名为 `FormPilot-chrome.zip`，供 README 的最新版本下载链接使用。
+
+发布前运行 `npm test`，完成需要的浏览器验证，并确认工作区已提交且没有凭据或本地数据。以下命令从当前提交中打包扩展文件，在 ZIP 根目录保留 `manifest.json`，并附带许可证与免责声明：
+
+```sh
+git archive --format=zip --output=FormPilot-chrome.zip --add-file=LICENSE --add-file=DISCLAIMER.md HEAD:extension
+```
+
+检查解压后的扩展能加载，再推送提交。创建 Release 时指定已经验证的完整提交 SHA，避免默认分支移动后版本标签与安装包不一致：
+
+```sh
+git push origin main
+gh release create v0.2.0 FormPilot-chrome.zip --target "$(git rev-parse HEAD)" --title "FormPilot v0.2.0" --notes-file docs/releases/v0.2.0.md --latest
+```
+
+后续发布同步替换版本号与说明文件路径，不覆盖已有 Release。该流程发布 GitHub 安装包，不涉及浏览器商店审核或自动更新。
+
 ## 代码导航
 
 - `extension/manifest.json` / `background.js`：权限、侧栏入口与存储隔离。

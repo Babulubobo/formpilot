@@ -6,6 +6,7 @@
 
 ![Chrome 116+](https://img.shields.io/badge/Chrome-116%2B-444444?style=flat-square)
 ![Manifest V3](https://img.shields.io/badge/Manifest-V3-444444?style=flat-square)
+[![Release](https://img.shields.io/github/v/release/Babulubobo/formpilot?style=flat-square&color=444444)](https://github.com/Babulubobo/formpilot/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-444444?style=flat-square)](LICENSE)
 
 [Installation](#installation) · [Get started](#get-started) · [FAQ](#faq) · [Developer guide (中文)](docs/DEVELOPMENT.md)
@@ -21,14 +22,14 @@
 
 ## Installation
 
-Requires **Chrome 116 or later**. The extension is currently installed from source, with no build step or npm dependencies required.
+Requires **Chrome 116 or later**. Download the extension package from [Releases](https://github.com/Babulubobo/formpilot/releases/latest). No build step or npm dependencies are required; developer mode is still needed until a store version is available.
 
-1. [Download the source ZIP](https://github.com/Babulubobo/formpilot/archive/refs/heads/main.zip) and extract it, or choose **Code → Download ZIP** on the repository page.
+1. [Download FormPilot-chrome.zip](https://github.com/Babulubobo/formpilot/releases/latest/download/FormPilot-chrome.zip) and extract it into a folder you will keep for the extension.
 2. Enter `chrome://extensions` in Chrome's address bar and enable **Developer mode** in the upper-right corner.
-3. Click **Load unpacked** and select the **`extension` folder** inside the extracted project.
+3. Click **Load unpacked** and select the extracted folder containing **`manifest.json`**.
 4. Pin **FormPilot** from the browser toolbar's extensions menu for easy access to the side panel.
 
-Select the `extension` folder, not the ZIP file or the project root.
+In the release assets, choose **FormPilot-chrome.zip**. GitHub's **Source code** archives contain the full repository; if you use one of those instead, select its `extension` subfolder when loading.
 
 ## Get started
 
@@ -43,7 +44,7 @@ Your settings are saved in this browser for future runs. To enable automatic sub
 <details>
 <summary>No API keys yet? Try the local demo</summary>
 
-Install Node.js, then run this command in the project directory:
+The demo is included in the [source repository ZIP](https://github.com/Babulubobo/formpilot/archive/refs/heads/main.zip). Download and extract the source, install Node.js, then run this command in the project directory:
 
 ```sh
 npm run demo
@@ -87,7 +88,7 @@ FormPilot currently supports native form controls in the main page, ARIA radio g
 <details>
 <summary>Do I need to enter my API keys again after updating?</summary>
 
-No. Update the files in the original `extension` folder, click the reload button on the FormPilot card at `chrome://extensions`, refresh the question page, then close and reopen the side panel.
+No. Download the latest extension ZIP and replace the files in the original installation folder (the one containing `manifest.json`). Click the reload button on the FormPilot card at `chrome://extensions`, refresh the question page, then close and reopen the side panel. If you originally loaded from source, keep using its `extension` folder.
 
 Settings and keys are retained when you update the same extension installation. Do not uninstall it first: uninstalling clears its local data.
 

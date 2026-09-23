@@ -6,6 +6,7 @@
 
 ![Chrome 116+](https://img.shields.io/badge/Chrome-116%2B-444444?style=flat-square)
 ![Manifest V3](https://img.shields.io/badge/Manifest-V3-444444?style=flat-square)
+[![Release](https://img.shields.io/github/v/release/Babulubobo/formpilot?style=flat-square&color=444444)](https://github.com/Babulubobo/formpilot/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-444444?style=flat-square)](LICENSE)
 
 [安装](#安装) · [开始使用](#开始使用) · [常见问题](#常见问题) · [开发文档](docs/DEVELOPMENT.md)
@@ -21,14 +22,14 @@
 
 ## 安装
 
-需要 **Chrome 116 或更新版本**。目前通过加载源码安装，无需构建，也无需安装 npm 依赖。
+需要 **Chrome 116 或更新版本**。从 [Releases](https://github.com/Babulubobo/formpilot/releases/latest) 下载扩展包，无需构建或安装 npm 依赖；目前尚未上架商店，安装仍需开启开发者模式。
 
-1. [下载源码 ZIP](https://github.com/Babulubobo/formpilot/archive/refs/heads/main.zip) 并解压，也可以在仓库页选择 **Code → Download ZIP**。
+1. [下载 FormPilot-chrome.zip](https://github.com/Babulubobo/formpilot/releases/latest/download/FormPilot-chrome.zip)，解压到一个用于长期存放扩展的文件夹。
 2. 在 Chrome 地址栏输入 `chrome://extensions`，开启右上角的「开发者模式」。
-3. 点击「加载已解压的扩展程序」，选择解压目录里的 **`extension` 文件夹**。
+3. 点击「加载已解压的扩展程序」，选择解压后包含 **`manifest.json`** 的文件夹。
 4. 在浏览器工具栏的扩展菜单中固定 **FormPilot**，方便打开侧栏。
 
-选择的是 `extension` 文件夹，不是 ZIP 文件或整个项目目录。
+Release 附件请选择 **FormPilot-chrome.zip**。GitHub 自动提供的 **Source code** 是完整源码；如果下载的是源码包，加载时仍选择其中的 `extension` 子文件夹。
 
 ## 开始使用
 
@@ -43,7 +44,7 @@
 <details>
 <summary>没有 API Key？先体验本地演示</summary>
 
-安装 Node.js 后，在项目目录运行：
+演示页包含在 [完整源码 ZIP](https://github.com/Babulubobo/formpilot/archive/refs/heads/main.zip) 中。下载并解压源码、安装 Node.js 后，在项目目录运行：
 
 ```sh
 npm run demo
@@ -87,7 +88,7 @@ AI 模式需要配置自己的服务密钥，API 用量由对应服务计费；�
 <details>
 <summary>更新插件后，需要重新填 API Key 吗？</summary>
 
-不需要。用新版本文件更新原来的 `extension` 文件夹，在 `chrome://extensions` 中点击 FormPilot 卡片上的刷新按钮，再刷新题目网页、关闭并重新打开侧栏即可。
+不需要。下载新版扩展 ZIP，用其中的文件更新原来的安装文件夹（包含 `manifest.json` 的目录），在 `chrome://extensions` 中点击 FormPilot 卡片上的刷新按钮，再刷新题目网页、关闭并重新打开侧栏即可。如果最初从源码安装，继续沿用原来的 `extension` 文件夹。
 
 沿用同一个扩展安装时，设置与 Key 会保留。不要先卸载扩展；卸载会清除其本机数据。
 
