@@ -73,6 +73,16 @@
     }
     return clean(parts.join(' '));
   };
+  const choiceLabel = (node) => {
+    // Options may put the input in one cell/wrapper and its text in the next.
+    // Only climb through wrappers containing this one control.
+    for (let current = node, depth = 0; current && depth < 3; current = current.parentElement, depth++) {
+      if (current !== node && (current.matches('body, form, fieldset') || current.querySelectorAll('input, select, textarea').length !== 1)) break;
+      const label = adjacentLabel(current);
+      if (label) return label;
+    }
+    return '';
+  };
   const headingFor = (node, groupNodes) => {
     // Stay near the field; never cross another question's controls looking for a heading.
     const hasOtherFields = (element) => [element, ...element.querySelectorAll('input, select, textarea')]
@@ -105,7 +115,7 @@
     }
     return clean(node.getAttribute('aria-label')) ||
       clean(Array.from(node.labels || []).map(labelText).join(' ')) ||
-      (['radio', 'checkbox'].includes(node.type) ? adjacentLabel(node) : '') ||
+      (['radio', 'checkbox'].includes(node.type) ? choiceLabel(node) : '') ||
       clean(node.getAttribute('placeholder')) || legendFor(node) || clean(node.name) || '未命名字段';
   };
   const groupLabel = (node, nodes) => legendFor(node) || headingFor(node, nodes) || labelFor(node);
@@ -134,11 +144,13 @@
     const demo = ['localhost', '127.0.0.1'].includes(location.hostname) && document.documentElement.dataset.jevDemo === 'true';
     // jQuery Quiz (used by Runoob) renders choices as links, not native radios.
     const quiz = document.querySelector('#quiz.quiz-container');
-    const scope = quiz || document;
+    const bixTest = document.querySelector('#testContent.test-content:has(.bix-tbl-options input[type="radio"])');
+    const scope = quiz || bixTest?.closest('.ques-wrapper') || document;
     const scanned = [];
     const errors = [];
     const visited = new Set();
-    const controls = Array.from(scope.querySelectorAll('input, textarea, select')).filter(node => editable(node) && !searchField(node));
+    const controls = Array.from((bixTest || scope).querySelectorAll(bixTest ? '.bix-tbl-options input[type="radio"]' : 'input, textarea, select'))
+      .filter(node => editable(node) && !searchField(node));
     for (const node of controls) {
       if (visited.has(node)) continue;
       const type = kindFor(node);
@@ -194,14 +206,14 @@
     }
 
     const scannedButtons = [];
-    for (const node of scope.querySelectorAll('button, input[type="submit"], input[type="button"], [role="button"], #quiz-start-btn, #quiz-next-btn, #quiz-finish-btn')) {
+    for (const node of scope.querySelectorAll(bixTest ? '#btnStartTest, #btnSubmitTest' : 'button, input[type="submit"], input[type="button"], [role="button"], #quiz-start-btn, #quiz-next-btn, #quiz-finish-btn')) {
       if (!editable(node)) continue;
       const label = clean(node.getAttribute('aria-label')) || clean(node.innerText || node.value || node.textContent);
       if (!label) continue;
       // ponytail: explicit text covers ordinary forms; custom workflows need their own adapter.
-      const kind = quiz && node.id === 'quiz-start-btn' ? 'start'
+      const kind = (quiz && node.id === 'quiz-start-btn') || (bixTest && node.id === 'btnStartTest') ? 'start'
         : quiz && node.id === 'quiz-next-btn' ? 'next'
-        : quiz && node.id === 'quiz-finish-btn' ? 'submit'
+        : (quiz && node.id === 'quiz-finish-btn') || (bixTest && node.id === 'btnSubmitTest') ? 'submit'
         : /^(next(?:\s+(?:step|page|question))?|continue|下一(?:步|页|题)|继续)[\s→›»]*$/i.test(label) ? 'next'
         : node.type === 'submit' || /^(submit(?:\s+(?:application|form|response))?|send(?:\s+(?:application|response))?|提交(?:申请|表单|问卷)?|发送|完成|finish)[.!！。\s]*$/i.test(label) ? 'submit' : 'other';
       const id = idFor(node);
@@ -210,12 +222,13 @@
     }
     const notices = [];
     if (scannedButtons.some(button => button.kind === 'start')) notices.push('已识别测验入口，开始填写后会先打开题目。');
-    else if (!quiz && !scanned.length && Array.from(document.querySelectorAll('input')).some(node => editable(node) && searchField(node))) notices.push('已忽略站内搜索框，当前未识别到题目或表单。请确认测验已开始。');
+    else if (!quiz && !bixTest && !scanned.length && Array.from(document.querySelectorAll('input')).some(node => editable(node) && searchField(node))) notices.push('已忽略站内搜索框，当前未识别到题目或表单。请确认测验已开始。');
     if (Array.from(document.querySelectorAll('iframe')).some(visible)) notices.push('当前仅支持主页面，不读取 iframe 内的表单。');
     if (document.querySelector('[role="combobox"]:not(select), [role="textbox"]:not(input):not(textarea), [role="radio"]:not(input), [role="checkbox"]:not(input), select[multiple]')) notices.push('自定义控件与多选下拉框需要手动填写。');
     return {
-      url: location.href, title: document.title, context: quiz ? clean(quiz.querySelector('h1')?.innerText) : contextFor(scanned), fields: scanned, buttons: scannedButtons,
-      demo, quiz: Boolean(quiz), completed: demo && document.documentElement.dataset.jevComplete === 'true' ||
+      url: location.href, title: document.title, context: quiz ? clean(quiz.querySelector('h1')?.innerText) : bixTest ? visibleText(document.querySelector('h1')) : contextFor(scanned), fields: scanned, buttons: scannedButtons,
+      demo, quiz: Boolean(quiz || bixTest), completed: demo && document.documentElement.dataset.jevComplete === 'true' ||
+        Boolean(bixTest && visibleText(document.querySelector('#testResultStats'))) ||
         Boolean(quiz?.classList.contains('quiz-results-state') && quiz.querySelector('#quiz-results-screen') && visible(quiz.querySelector('#quiz-results-screen'))),
       validity: { valid: errors.length === 0, errors },
       ...(notices.length ? { notice: notices.join(' ') } : {}),

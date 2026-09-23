@@ -935,6 +935,75 @@ try {
   assert.equal(await demo.evaluate(() => quizClicks.finish), 1);
   assert.deepEqual(errors, []);
   console.log('PASS: site searches make no model calls; jQuery Quiz starts, reads visible code and link options, preserves graded selections, advances and respects the final-submit gate');
+
+  await context.unroute('https://api.typesafe.ai/**');
+  await context.unroute('https://api.deepseek.com/**');
+  // Original questions in IndiaBIX's split input/text layout. Hidden scoring
+  // data, scratchpads and the public feedback form must never become answers.
+  const bixUrl = 'http://127.0.0.1:4173/quiz/split-options.html';
+  const bixQuestions = [
+    { label: 'Which object measures time?', options: ['A clock', 'A spoon', 'A shoe', 'A cup'] },
+    { label: 'Which number comes after six?', options: ['Five', 'Seven', 'Four', 'Two'] },
+  ];
+  const bixInputs = [];
+  await context.route(bixUrl, route => route.fulfill({ contentType: 'text/html; charset=utf-8', body: `<!doctype html>
+    <html><meta charset="utf-8"><title>Split-option regression</title><style>.d-none{display:none}.bix-opt-row{display:flex}</style><body>
+    <nav><input placeholder="Search"><button>Search Submit</button></nav><h1>Practice Quiz</h1><div class="ques-wrapper">
+    <div id="divInitiator"><input type="button" id="btnStartTest" value=" Start Test "></div>
+    <div id="testContent" class="test-content d-none">${bixQuestions.map((question, index) => `
+      <div class="bix-div-container"><div><div class="bix-td-qno">${index + 1}.</div><div class="bix-td-qtxt"><p>${question.label}</p></div></div>
+      <div class="bix-tbl-options">${question.options.map((label, option) => `
+        <div class="bix-opt-row"><div class="test-td-option"><input type="radio" name="chk_opt_${index}" value="${option}"><span></span></div>
+        <div class="bix-td-option-val"><div>${label}<span hidden>Hidden option annotation</span></div></div></div>`).join('')}</div>
+      <input type="hidden" value="hidden-answer-key"><div class="bix-div-answer d-none">Hidden explanation</div>
+      <div class="bix-div-workspace"><textarea placeholder="Workspace"></textarea></div></div>`).join('')}
+      <input type="button" id="btnSubmitTest" value=" Submit Test "></div>
+    <div id="testResultStats" class="d-none">Test complete</div>
+    <form id="testFeedBackBox" class="d-none"><label>Feedback<textarea required></textarea></label><input placeholder="Full Name" required><button>Submit</button></form>
+    </div><script>
+      window.bixClicks = { start: 0, answers: [], submit: 0, feedback: 0 };
+      document.getElementById('btnStartTest').onclick = () => {
+        bixClicks.start++; document.getElementById('divInitiator').classList.add('d-none');
+        document.getElementById('testContent').classList.remove('d-none');
+      };
+      document.querySelectorAll('input[type=radio]').forEach(input => input.onclick = () => bixClicks.answers.push([input.name, input.value]));
+      document.getElementById('btnSubmitTest').onclick = () => {
+        bixClicks.submit++; document.querySelectorAll('input[type=radio]').forEach(input => input.disabled = true);
+        document.getElementById('btnSubmitTest').classList.add('d-none');
+        document.querySelectorAll('#testResultStats,#testFeedBackBox,.bix-div-answer').forEach(node => node.classList.remove('d-none'));
+      };
+      document.getElementById('testFeedBackBox').onsubmit = event => { event.preventDefault(); bixClicks.feedback++; };
+    </script></body></html>` }));
+  await context.route('https://api.typesafe.ai/**', async route => {
+    bixInputs.push(route.request().postDataJSON());
+    await route.fulfill({ json: { answers: { q0: { type: 'choice', choice: 'c0', confidence: 1 }, q1: { type: 'choice', choice: 'c1', confidence: 1 } } } });
+  });
+  await context.route('https://api.deepseek.com/**', async route => {
+    await route.abort(); assert.fail('Readable confident options should not require DeepSeek');
+  });
+  await demo.goto(bixUrl);
+  await demo.bringToFront();
+  await panel.evaluate(() => {
+    document.querySelector('#auto-submit').checked = false;
+    document.querySelector('#start-btn').click();
+  });
+  await panel.waitForFunction(() => !document.querySelector('#start-btn').disabled && document.querySelector('#status').textContent.includes('等待你检查并提交'), null, { timeout: 15000 });
+  assert.equal(bixInputs.length, 1);
+  assert.deepEqual(bixInputs[0].state.fields.map(field => ({ label: field.label, options: field.options.map(option => option.label) })),
+    bixQuestions.map(({ label, options }, index) => ({ label: `${index + 1}. ${label}`, options })));
+  assert.doesNotMatch(JSON.stringify(bixInputs[0].state), /chk_opt_|Hidden|hidden-answer|Workspace|Feedback|Full Name|Search/);
+  assert.deepEqual(await demo.evaluate(() => bixClicks), { start: 1, answers: [['chk_opt_0', '0'], ['chk_opt_1', '1']], submit: 0, feedback: 0 });
+  assert.equal(await demo.locator('input:checked').count(), 2);
+  await panel.evaluate(() => {
+    document.querySelector('#auto-submit').checked = true;
+    document.querySelector('#start-btn').click();
+  });
+  await panel.waitForFunction(() => !document.querySelector('#start-btn').disabled && document.querySelector('#status').textContent.includes('测验已完成'), null, { timeout: 15000 });
+  assert.equal(bixInputs.length, 1, 'continuing must preserve the native checked answers');
+  assert.deepEqual(await demo.evaluate(() => bixClicks), { start: 1, answers: [['chk_opt_0', '0'], ['chk_opt_1', '1']], submit: 1, feedback: 0 });
+  assert.equal(await demo.locator('textarea,input[type=text],input:not([type])').evaluateAll(nodes => nodes.every(node => node.value === '')), true);
+  assert.deepEqual(errors, []);
+  console.log('PASS: IndiaBIX split-wrapper choices reach JEV as distinct readable labels, select the matching radios, stop at submit, and exclude search, scratchpads, hidden answers and public feedback');
 } finally {
   await context?.close();
   server?.kill();
