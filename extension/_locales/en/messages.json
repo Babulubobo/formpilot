@@ -1,0 +1,5 @@
+{
+  "extensionName": { "message": "FormPilot · Form assistant" },
+  "extensionDescription": { "message": "AI reads questions, writes answers and fills forms on the current web page." },
+  "actionTitle": { "message": "Open FormPilot" }
+}

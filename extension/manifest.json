@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "__MSG_extensionName__",
+  "version": "0.1.12",
+  "description": "__MSG_extensionDescription__",
+  "default_locale": "en",
+  "minimum_chrome_version": "116",
+  "permissions": ["activeTab", "tabs", "scripting", "storage", "sidePanel"],
+  "host_permissions": ["https://api.typesafe.ai/*", "https://api.deepseek.com/*"],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "action": { "default_title": "__MSG_actionTitle__" },
+  "background": { "service_worker": "background.js", "type": "module" },
+  "side_panel": { "default_path": "sidepanel.html" }
+}

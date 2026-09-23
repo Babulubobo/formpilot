@@ -1,0 +1,27 @@
+node_modules/
+test-results/
+.env
+.env.*
+
+# Local tools and generated browser data
+.agents/
+.codex/
+skills-lock.json
+.DS_Store
+.cache/
+.playwright/
+playwright-report/
+blob-report/
+coverage/
+*.log
+*.har
+*.zip
+
+# Credentials and private keys
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+credentials*.json
+secrets*.json

@@ -1,0 +1,5 @@
+{
+  "extensionName": { "message": "FormPilot · 填表助手" },
+  "extensionDescription": { "message": "让 AI 读懂问题、生成答案，自动填写当前网页的表单。" },
+  "actionTitle": { "message": "打开 FormPilot 填表助手" }
+}

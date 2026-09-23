@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>FormPilot 答题测试 · 空资料也能开始</title>
+    <link rel="stylesheet" href="../extension/sidepanel.css">
+  </head>
+  <body class="demo-page">
+    <main class="demo-shell">
+      <header class="demo-heading">
+        <div class="wordmark" aria-label="FormPilot">FormPilot<span class="wordmark-dot" aria-hidden="true">.</span></div>
+        <span class="demo-kicker">浏览器自动答题 · 本地测试页</span>
+        <h1>不填个人资料，也能回答问题。</h1>
+        <p>在侧栏选择「AI 自动填写」，配置模型后开始填写。这里的知识题、方案和试用计划由模型实际生成，没有预设答案。</p>
+      </header>
+
+      <p id="project-context" class="demo-note">项目要求：用JEV选择动作，LLM生成文字，浏览器执行。</p>
+
+      <form id="knowledge-form" class="form-grid">
+        <fieldset class="demo-step full-width">
+          <legend>知识、方案与页面理解</legend>
+          <div class="demo-form-grid">
+            <label class="field-label full-width" for="knowledge">1. HTTP 404 状态码是什么意思？<span class="required-note">必填</span>
+              <textarea id="knowledge" name="knowledge" rows="3" required maxlength="600" aria-describedby="knowledge-help"></textarea>
+            </label>
+            <p id="knowledge-help" class="helper full-width">用一两句话解释含义，并给出一个常见原因。</p>
+
+            <label class="field-label full-width" for="proposal">2. 请设计一个三步自动填表方案。<span class="required-note">必填</span>
+              <textarea id="proposal" name="proposal" rows="4" required maxlength="1000" aria-describedby="proposal-help"></textarea>
+            </label>
+            <p id="proposal-help" class="helper full-width">结合上方项目要求，说明每一步由哪个组件负责以及要完成什么。</p>
+
+            <label class="field-label full-width" for="reason">3. 你为什么想试用自动化平台？<span class="required-note">必填</span>
+              <textarea id="reason" name="reason" rows="4" required maxlength="800" aria-describedby="reason-help"></textarea>
+            </label>
+            <p id="reason-help" class="helper full-width">可以写一段拟开展的试用计划，说明希望探索的用途；不需要已经有使用经历。</p>
+
+            <label class="field-label full-width" for="context-choice">4. 根据项目要求，哪个组件负责点击网页？<span class="required-note">必填</span>
+              <select id="context-choice" name="context-choice" required>
+                <option value="">请选择</option>
+                <option value="jev">JEV</option>
+                <option value="llm">LLM</option>
+                <option value="browser">浏览器执行器</option>
+              </select>
+            </label>
+
+            <label class="field-label full-width" for="unknown-email">5. 你的邮箱是什么？<span class="required-note">选填</span>
+              <input id="unknown-email" name="unknown-email" type="email" autocomplete="email" title="请填写你本人使用的邮箱；未提供时可以留空。">
+            </label>
+          </div>
+          <div class="demo-navigation">
+            <span class="required-note">生成后可直接查看和编辑答案</span>
+          </div>
+        </fieldset>
+      </form>
+      <p class="demo-footnote">这是本地测试页，页面不提交答案。个人邮箱可留空；不要把拟写的试用计划当作已经发生的经历。</p>
+    </main>
+  </body>
+</html>

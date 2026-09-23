@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title data-zh="FormPilot · 填表助手" data-en="FormPilot · Form assistant">FormPilot · 填表助手</title>
+    <link rel="stylesheet" href="sidepanel.css">
+    <script type="module" src="sidepanel.js"></script>
+  </head>
+  <body class="sidepanel">
+    <header class="app-header">
+      <div class="brand">
+        <div class="wordmark" aria-label="FormPilot">FormPilot<span class="wordmark-dot" aria-hidden="true">.</span></div>
+        <span class="brand-subtitle" data-zh="填表助手" data-en="Form assistant">填表助手</span>
+      </div>
+      <fieldset id="language" class="language-switch" aria-label="界面语言" data-aria-label-zh="界面语言" data-aria-label-en="Interface language">
+        <button type="button" value="zh-CN" lang="zh-CN" aria-pressed="true">中文</button>
+        <button type="button" value="en" lang="en" aria-label="English" aria-pressed="false">EN</button>
+      </fieldset>
+    </header>
+
+    <main class="panel-main">
+      <section id="task-section" class="task-section" aria-labelledby="page-title">
+        <div class="page-context">
+          <span class="small-label" data-zh="当前页面" data-en="Current page">当前页面</span>
+          <h1 id="page-title" data-zh="填写当前网页" data-en="Fill the current page">填写当前网页</h1>
+          <span id="page-url" class="page-url" data-zh="无需先扫描，直接开始填写。" data-en="Start directly. No scan needed.">无需先扫描，直接开始填写。</span>
+        </div>
+
+        <div class="action-row">
+          <button id="start-btn" type="button" class="button primary" data-zh="开始填写" data-en="Fill form">开始填写</button>
+          <button id="stop-btn" type="button" class="button secondary" hidden disabled title="任务运行时可停止" data-title-zh="任务运行时可停止" data-title-en="Stop the current task while it is running" data-zh="停止填写" data-en="Stop filling">停止填写</button>
+          <button id="authorize-btn" type="button" class="button primary" hidden data-zh="授权此网站并扫描" data-en="Allow site &amp; scan">授权此网站并扫描</button>
+        </div>
+        <div class="task-toolbar">
+          <button id="scan-btn" type="button" class="text-button" data-zh="扫描页面" data-en="Scan page">扫描页面</button>
+          <p id="run-policy" class="helper" data-zh="自动翻页 · 提交前暂停" data-en="Auto-advance · Pause before submit">自动翻页 · 提交前暂停</p>
+        </div>
+        <p id="run-hint" class="helper quiet" hidden data-zh="关闭侧栏会停止当前任务。" data-en="Closing this panel stops the current task.">关闭侧栏会停止当前任务。</p>
+
+        <div class="run-status">
+          <p id="status" role="status" aria-live="polite" data-zh="准备就绪" data-en="Ready">准备就绪</p>
+          <div id="run-metrics" class="run-metrics" hidden>
+            <span id="field-count" data-zh="尚未扫描" data-en="Not scanned yet">尚未扫描</span>
+            <span id="elapsed">—</span>
+          </div>
+          <progress id="progress" value="0" max="1" hidden aria-label="填写进度" data-aria-label-zh="填写进度" data-aria-label-en="Filling progress"></progress>
+        </div>
+      </section>
+
+      <section id="results-section" class="results-section" hidden aria-labelledby="results-heading">
+        <h2 id="results-heading" data-zh="本次填写" data-en="This run">本次填写</h2>
+        <div id="fields" class="field-results"><p class="empty-state" data-zh="扫描后，这里会显示识别到的字段与填写结果。" data-en="Scan a page to see its fields and filling results here.">扫描后，这里会显示识别到的字段与填写结果。</p></div>
+        <details class="log-details">
+          <summary><span data-zh="执行记录" data-en="Activity log">执行记录</span></summary>
+          <ol id="log" class="execution-log" aria-label="执行记录" data-aria-label-zh="执行记录" data-aria-label-en="Activity log" data-empty="任务开始后记录每一步操作。" data-empty-zh="任务开始后记录每一步操作。" data-empty-en="Task steps will appear here when you start."></ol>
+        </details>
+      </section>
+
+      <details id="preferences-details" class="settings-details">
+        <summary><span data-zh="设置与资料" data-en="Settings &amp; details">设置与资料</span></summary>
+        <div class="settings-content">
+          <section aria-labelledby="theme-heading">
+            <h2 id="theme-heading" data-zh="外观" data-en="Appearance">外观</h2>
+            <fieldset id="theme" class="theme-switch" aria-label="界面主题" data-aria-label-zh="界面主题" data-aria-label-en="Interface theme">
+              <button type="button" value="light" aria-pressed="false" data-zh="白天" data-en="Light">白天</button>
+              <button type="button" value="dark" aria-pressed="false" data-zh="黑夜" data-en="Dark">黑夜</button>
+              <button type="button" value="system" aria-pressed="true" data-zh="跟随系统" data-en="System">跟随系统</button>
+            </fieldset>
+          </section>
+
+          <section id="connection-section" aria-labelledby="connection-heading">
+            <h2 id="connection-heading" data-zh="模型连接" data-en="Model setup">模型连接</h2>
+            <form id="settings-form" class="form-grid">
+              <label class="field-label full-width" for="typesafe-key"><span data-zh="TypeSafe API Key" data-en="TypeSafe API Key">TypeSafe API Key</span><input id="typesafe-key" name="typesafeKey" type="password" autocomplete="off" spellcheck="false" aria-describedby="key-hint"></label>
+              <label class="field-label full-width" for="deepseek-key"><span data-zh="DeepSeek API Key" data-en="DeepSeek API Key">DeepSeek API Key</span><input id="deepseek-key" name="deepseekKey" type="password" autocomplete="off" spellcheck="false" aria-describedby="key-hint"></label>
+              <label class="field-label full-width" for="deepseek-model"><span data-zh="DeepSeek 模型" data-en="DeepSeek model">DeepSeek 模型</span><select id="deepseek-model" name="deepseekModel"><option value="deepseek-flash" data-zh="DeepSeek Flash（默认）" data-en="DeepSeek Flash (default)">DeepSeek Flash（默认）</option><option value="deepseek-v4-pro" data-zh="DeepSeek V4 Pro" data-en="DeepSeek V4 Pro">DeepSeek V4 Pro</option></select></label>
+            </form>
+            <p id="key-hint" class="helper" data-zh="Key 保存在当前浏览器，更新扩展或重启后仍保留，不同步到其他设备，也不会嵌入网页。清空输入框并保存即可移除。AI 模式会将表单内容及相关资料发送给对应模型服务。" data-en="Keys stay in this browser after updates and restarts. They are not synced to other devices or exposed to web pages. Clear a key and save to remove it. AI mode sends form content and relevant details to the selected model services.">Key 保存在当前浏览器，更新扩展或重启后仍保留，不同步到其他设备，也不会嵌入网页。清空输入框并保存即可移除。AI 模式会将表单内容及相关资料发送给对应模型服务。</p>
+          </section>
+
+          <section id="behavior-section" aria-labelledby="behavior-heading">
+            <h2 id="behavior-heading" data-zh="运行选项" data-en="Run options">运行选项</h2>
+            <div class="mode-row">
+              <label for="mode" data-zh="运行模式" data-en="Mode">运行模式</label>
+              <select id="mode" aria-describedby="mode-hint">
+                <option value="live" data-zh="AI 自动填写" data-en="AI autofill">AI 自动填写</option>
+                <option value="demo" data-zh="本地演示（不调用 AI）" data-en="Local demo (no AI)">本地演示（不调用 AI）</option>
+              </select>
+            </div>
+            <p id="mode-hint" class="helper" data-zh="AI 理解题目、生成答案，并复核不确定的选项。" data-en="AI answers questions, drafts text and checks uncertain choices.">AI 理解题目、生成答案，并复核不确定的选项。</p>
+            <div class="run-options">
+              <label class="check-label"><input id="auto-next" type="checkbox" checked><span data-zh="填完后自动翻页" data-en="Auto-advance">填完后自动翻页</span></label>
+              <label class="check-label"><input id="auto-submit" type="checkbox"><span data-zh="允许最终提交" data-en="Allow submit">允许最终提交</span></label>
+            </div>
+          </section>
+
+          <details id="profile-details" class="profile-details">
+            <summary><span data-zh="参考资料" data-en="Reference details">参考资料</span><span class="summary-note" data-zh="全部选填" data-en="Optional">全部选填</span></summary>
+            <div class="details-body">
+              <div class="demo-actions">
+                <button id="demo-btn" type="button" class="button secondary" data-zh="载入示例资料" data-en="Load sample">载入示例资料</button>
+                <a id="demo-page-link" href="http://127.0.0.1:4173/demo/" target="_blank" rel="noopener noreferrer" data-zh="打开演示页 ↗" data-en="Open demo ↗">打开演示页 ↗</a>
+                <a href="http://127.0.0.1:4173/demo/knowledge.html" target="_blank" rel="noopener noreferrer" data-zh="试试空资料答题 ↗" data-en="Try without a profile ↗">试试空资料答题 ↗</a>
+              </div>
+              <p class="helper" data-zh="示例人物与项目均为虚构，仅用于体验。" data-en="The sample person and project are fictional.">示例人物与项目均为虚构，仅用于体验。</p>
+              <form id="profile-form" class="form-grid">
+                <label class="field-label" for="profile-name"><span data-zh="姓名" data-en="Name">姓名</span><input id="profile-name" name="name" type="text" autocomplete="name" placeholder="林澈" data-placeholder-zh="林澈" data-placeholder-en="Lin Che"></label>
+                <label class="field-label" for="profile-email"><span data-zh="邮箱" data-en="Email">邮箱</span><input id="profile-email" name="email" type="email" autocomplete="email" placeholder="lin@example.com" data-placeholder-zh="lin@example.com" data-placeholder-en="lin@example.com"></label>
+                <label class="field-label" for="profile-company"><span data-zh="公司 / 项目" data-en="Company / project">公司 / 项目</span><input id="profile-company" name="company" type="text" autocomplete="organization" placeholder="Seed Studio" data-placeholder-zh="Seed Studio" data-placeholder-en="Seed Studio"></label>
+                <label class="field-label" for="profile-role"><span data-zh="角色" data-en="Role">角色</span><input id="profile-role" name="role" type="text" autocomplete="organization-title" placeholder="开发者" data-placeholder-zh="开发者" data-placeholder-en="Developer"></label>
+                <label class="field-label" for="profile-website"><span data-zh="网站" data-en="Website">网站</span><input id="profile-website" name="website" type="url" autocomplete="url" placeholder="https://example.com" data-placeholder-zh="https://example.com" data-placeholder-en="https://example.com"></label>
+                <label class="field-label" for="profile-country"><span data-zh="国家 / 地区" data-en="Country / region">国家 / 地区</span><input id="profile-country" name="country" type="text" autocomplete="country-name" placeholder="中国" data-placeholder-zh="中国" data-placeholder-en="China"></label>
+                <label class="field-label full-width" for="profile-bio"><span data-zh="参考材料与填写要求" data-en="Context and instructions">参考材料与填写要求</span><textarea id="profile-bio" name="bio" rows="5" placeholder="可填写个人背景、公司或产品说明、项目材料，以及这次的填写要求；也可以留空。" data-placeholder-zh="可填写个人背景、公司或产品说明、项目材料，以及这次的填写要求；也可以留空。" data-placeholder-en="Add background, company or project details, and any instructions for this form. You can leave this blank."></textarea></label>
+              </form>
+              <p class="helper" data-zh="不需要预先写好答案。知识题、方案和开放题由模型作答；这里仅补充个人事实、背景或填写要求，可全部留空。资料保存在本机。" data-en="No prepared answers needed. AI handles knowledge questions, plans and open questions. Add personal facts, context or instructions here, or leave everything blank. Details are saved on this device.">不需要预先写好答案。知识题、方案和开放题由模型作答；这里仅补充个人事实、背景或填写要求，可全部留空。资料保存在本机。</p>
+            </div>
+          </details>
+
+          <div class="save-row"><button id="save-btn" type="submit" form="settings-form" class="button secondary" data-zh="保存资料与设置" data-en="Save settings">保存资料与设置</button></div>
+        </div>
+      </details>
+    </main>
+    <footer class="panel-footer"><span id="extension-version"></span></footer>
+  </body>
+</html>
