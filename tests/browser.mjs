@@ -6,6 +6,8 @@ import { pathToFileURL, fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { DEMO_PROFILE, demoPlan } from '../extension/brain.js';
+import './visibility.mjs';
+import './navigation.mjs';
 
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE_PATH
   ? pathToFileURL(process.env.PLAYWRIGHT_MODULE_PATH).href : 'playwright');
@@ -742,7 +744,7 @@ try {
       }).join('');
       return question.inline ? `${prompt}${options}<br>` : `<div class="quiz-question">${prompt}<div class="answers">${options}</div></div>`;
     }).join('')}
-    <button type="button">Check answers</button></form></main></body></html>`;
+    <button type="button" onclick="window.checkClicks = (window.checkClicks || 0) + 1">Check answers</button></form></main></body></html>`;
   const grammarInputs = [];
   await context.route(grammarUrl, route => route.fulfill({ contentType: 'text/html; charset=utf-8', body: grammarFixture }));
   await context.route('https://api.typesafe.ai/**', async route => {
@@ -765,8 +767,9 @@ try {
     grammarQuestions.map(({ label, options }) => ({ label, options })), 'each radio group must have its own nearby question and only its own choices');
   assert.equal(new Set(grammarScan.fields.map(field => field.label)).size, grammarQuestions.length);
   await panel.evaluate(() => document.querySelector('#start-btn').click());
-  await panel.waitForFunction(() => document.querySelector('#status').textContent.includes('本页填写完成')
+  await panel.waitForFunction(() => document.querySelector('#status').textContent.includes('检查后未出现下一步操作')
     && !document.querySelector('#start-btn').disabled, null, { timeout: 15000 });
+  assert.equal(await demo.evaluate(() => window.checkClicks), 1, 'An inert check button must not be clicked repeatedly');
   assert.equal(grammarInputs.length, 1, 'all distinct questions should be sent in one judgment batch');
   assert.deepEqual(grammarInputs[0].state.fields.map(field => ({ label: field.label, options: field.options.map(option => option.label) })),
     grammarQuestions.map(({ label, options }) => ({ label, options })));
@@ -938,6 +941,120 @@ try {
 
   await context.unroute('https://api.typesafe.ai/**');
   await context.unroute('https://api.deepseek.com/**');
+  // Re-rendered div/button choices use the generic structural path, even
+  // when all widget names change. Repeated questions must stay distinct.
+  const modernQuizUrl = 'http://127.0.0.1:4173/quiz/runoob-current.html';
+  const modernInputs = [];
+  let modernStructureCalls = 0;
+  const modernMarkup = tag => `<!doctype html>
+    <html lang="zh-CN"><meta charset="utf-8"><title>Current Runoob regression</title>
+    <style>.runoob-quiz-hidden{display:none}.runoob-quiz-option{padding:12px;cursor:pointer}</style><body>
+    ${searchBoxes}<footer><label>评论邮箱<input type="email" required></label></footer>
+    <div class="runoob-quiz-container"><header><h1>知识挑战</h1></header><div class="runoob-quiz-content">
+      <div id="quiz-container"></div>
+      <div id="result-container" class="runoob-quiz-hidden">测验完成！<button id="restart-btn">重新开始</button></div>
+      <div class="runoob-quiz-button-container"><button id="prev-btn" class="runoob-quiz-hidden">上一题</button><button id="next-btn">下一题</button></div>
+    </div></div><script>
+      let current = 0;
+      const answers = {};
+      window.modernClicks = { choices: [], next: 0, submit: 0 };
+      const container = document.getElementById('quiz-container');
+      function renderQuestion() {
+        const answered = answers[current] !== undefined;
+        container.innerHTML = '<div class="runoob-quiz-fade-in"><div class="runoob-quiz-question-header">'
+          + '<span class="runoob-quiz-question-number">第 ' + (current + 1) + ' 题 / 共 2 题</span></div>'
+          + '<h2 class="runoob-quiz-question-text">阅读代码：<pre>let n = 1;\\nif (n) n += 2;</pre>哪个 HTML 标签表示节？</h2>'
+          + '<div class="runoob-quiz-options-container">' + ['&lt;header&gt;', '&lt;section&gt;'].map((label, i) =>
+            '<${tag} class="runoob-quiz-option' + (answers[current] === i ? ' selected' : '')
+            + (answered ? i === 1 ? ' runoob-quiz-correct' : ' runoob-quiz-incorrect' : '') + '" data-option="' + i + '">'
+            + '<div class="runoob-quiz-option-content"><div class="runoob-quiz-option-letter">' + String.fromCharCode(65 + i)
+            + '</div><span>' + label + '</span>' + (answered ? '<span class="feedback-icon">评分标记</span>' : '') + '</div></${tag}>').join('')
+          + '</div><div id="explanation" class="runoob-quiz-explanation">' + (answered ? '答案解析不得进入题干' : '') + '</div></div>';
+        container.querySelectorAll('.runoob-quiz-option').forEach(option => option.onclick = () => {
+          if (answers[current] !== undefined) return;
+          answers[current] = Number(option.dataset.option);
+          modernClicks.choices.push([current, answers[current]]);
+          renderQuestion();
+        });
+        document.getElementById('prev-btn').classList.toggle('runoob-quiz-hidden', current === 0);
+        document.getElementById('next-btn').textContent = current === 1 ? '提交' : '下一题';
+      }
+      document.getElementById('next-btn').onclick = () => {
+        if (answers[current] === undefined) throw new Error('Unanswered question advanced');
+        if (current === 0) { modernClicks.next++; current++; renderQuestion(); }
+        else { modernClicks.submit++; container.classList.add('runoob-quiz-hidden'); document.getElementById('result-container').classList.remove('runoob-quiz-hidden'); }
+      };
+      renderQuestion();
+    </script></body></html>`;
+  for (const tag of ['div', 'button']) {
+    modernInputs.length = 0;
+    modernStructureCalls = 0;
+    const markup = tag === 'div' ? modernMarkup(tag) : modernMarkup(tag)
+      .replaceAll('runoob-quiz-', 'practice-').replaceAll('quiz-container', 'exercise-body')
+      .replaceAll('result-container', 'outcome').replaceAll('next-btn', 'advance').replaceAll('prev-btn', 'back')
+      .replaceAll('selected', 'active');
+    await context.route(modernQuizUrl, route => route.fulfill({ contentType: 'text/html; charset=utf-8', body: markup }));
+    await context.route('https://api.typesafe.ai/**', async route => {
+      const request = route.request().postDataJSON();
+      if (request.state.regions) {
+        modernStructureCalls++;
+        const answers = {};
+        request.state.regions.forEach((region, index) => {
+          assert.ok(!region.options.some(option => /上一题|下一题|提交/.test(option.currentLabel)), 'Navigation must be excluded by the scanner, before asking any model');
+          const prompt = region.prompts.find(text => text.text.startsWith('阅读代码：') && text.text.endsWith('哪个 HTML 标签表示节？'));
+          assert.ok(prompt, JSON.stringify(region));
+          answers[`s${index}`] = { type: 'choice', choice: prompt.id, confidence: 1 };
+          region.options.forEach((option, i) => {
+            const label = option.texts.find(text => text.text === ['<header>', '<section>'][i]);
+            assert.ok(label, JSON.stringify(option));
+            answers[`s${index}o${i}`] = { type: 'choice', choice: label.id, confidence: 1 };
+          });
+        });
+        await route.fulfill({ json: { answers } }); return;
+      }
+      modernInputs.push(request);
+      await route.fulfill({ json: { answers: { q0: { type: 'choice', choice: 'c0', confidence: 1 } } } });
+    });
+    await context.route('https://api.deepseek.com/**', async route => {
+      await route.abort(); assert.fail('Readable current Runoob choices must not require text fallback');
+    });
+    await demo.goto(modernQuizUrl);
+    await demo.bringToFront();
+    await panel.evaluate(() => { document.querySelector('#auto-submit').checked = false; document.querySelector('#start-btn').click(); });
+    await panel.waitForFunction(() => !document.querySelector('#start-btn').disabled && document.querySelector('#status').textContent.includes('等待你检查并提交'), null, { timeout: 15000 });
+    assert.equal(modernInputs.length, 2);
+    assert.equal(modernStructureCalls, 1, 'Repeated layouts need only one structural model request; each question still needs its own answer');
+    for (const input of modernInputs) {
+      assert.equal(input.state.fields.length, 1);
+      assert.deepEqual(input.state.fields[0].options.map(option => option.label), ['<header>', '<section>']);
+      assert.match(input.state.fields[0].label, /let n = 1;\nif \(n\) n \+= 2;/);
+      assert.doesNotMatch(JSON.stringify(input.state), /评论邮箱|答案解析|评分标记|搜索/);
+    }
+    assert.notEqual(modernInputs[0].state.fields[0].id, modernInputs[1].state.fields[0].id);
+    assert.deepEqual(await demo.evaluate(() => modernClicks), { choices: [[0, 0], [1, 0]], next: 1, submit: 0 });
+    await panel.evaluate(() => { document.querySelector('#auto-submit').checked = true; document.querySelector('#start-btn').click(); });
+    await panel.waitForFunction(() => !document.querySelector('#start-btn').disabled && document.querySelector('#status').textContent.includes('已点击提交'), null, { timeout: 15000 });
+    assert.equal(modernInputs.length, 2, 'rerendered selected answers must survive rescans and resuming');
+    assert.equal(await demo.evaluate(() => modernClicks.submit), 1);
+    assert.equal(await demo.locator('input').evaluateAll(nodes => nodes.every(node => node.value === '')), true);
+    assert.deepEqual(errors, []);
+    console.log(`PASS: generic ${tag} options survive rerenders, preserve wrong selections, distinguish repeated questions, exclude feedback and pause before submission`);
+    if (tag === 'div') {
+      await demo.reload();
+      await demo.bringToFront();
+      await demo.evaluate(() => { document.querySelector('#next-btn').onclick = () => { modernClicks.next++; }; });
+      await panel.evaluate(() => { document.querySelector('#auto-submit').checked = false; document.querySelector('#start-btn').click(); });
+      await panel.waitForFunction(() => !document.querySelector('#start-btn').disabled && document.querySelector('#status').textContent.includes('点击后页面没有变化'), null, { timeout: 15000 });
+      assert.equal(await demo.evaluate(() => modernClicks.next), 1, 'a no-op next button must never create a new question identity');
+      assert.equal(modernInputs.length, 3, 'the answered question must not be planned again');
+    }
+    await context.unroute(modernQuizUrl);
+    await context.unroute('https://api.typesafe.ai/**');
+    await context.unroute('https://api.deepseek.com/**');
+  }
+
+  await context.unroute('https://api.typesafe.ai/**');
+  await context.unroute('https://api.deepseek.com/**');
   // Original questions in IndiaBIX's split input/text layout. Hidden scoring
   // data, scratchpads and the public feedback form must never become answers.
   const bixUrl = 'http://127.0.0.1:4173/quiz/split-options.html';
@@ -1016,7 +1133,7 @@ try {
     { label: 'Select a direction.', options: ['North', 'South', 'West'] },
     { label: 'Choose a color.', options: ['Red', 'Green'] },
   ];
-  const structureCalls = [], structuredAnswers = [];
+  const structureCalls = [], structureReviews = [], structuredAnswers = [];
   await context.route(structureUrl, route => route.fulfill({ contentType: 'text/html; charset=utf-8', body: `<!doctype html>
     <html><meta charset="utf-8"><title>Unseen structures</title><style>.columns{display:grid;grid-template-columns:repeat(3,100px)}.chosen{font-weight:bold}section{margin:24px}</style><body>
     <nav><button>Account</button><button>Home</button></nav><form role="search"><input placeholder="Search"></form>
@@ -1048,7 +1165,7 @@ try {
         const expected = structureExpected.find(question => region.prompts.some(text => text.text === question.label));
         if (!expected) { answers[`s${index}`] = { type: 'choice', choice: 'ignore', confidence: 1 }; return; }
         // The first uncertain scan must expand once, not pass bad labels to the answer model.
-        answers[`s${index}`] = { type: 'choice', choice: structureCalls.length === 1 ? 'none' : region.prompts.find(text => text.text === expected.label).id, confidence: 1 };
+        answers[`s${index}`] = { type: 'choice', choice: region.prompts.find(text => text.text === expected.label).id, confidence: structureCalls.length === 1 ? 0.52 : 0.3 };
         region.options.forEach((option, i) => {
           const text = option.texts.find(text => text.text === expected.options[i]);
           assert.ok(text, `missing source text ${expected.options[i]}`);
@@ -1064,7 +1181,18 @@ try {
       await route.fulfill({ json: { answers: Object.fromEntries(request.state.fields.map((_, i) => [`q${i}`, { type: 'choice', choice: 'c0', confidence: 1 }])) } });
     }
   });
-  await context.route('https://api.deepseek.com/**', async route => { await route.abort(); assert.fail('No text-model fallback expected'); });
+  await context.route('https://api.deepseek.com/**', async route => {
+    const request = route.request().postDataJSON();
+    const { regions } = JSON.parse(request.messages[1].content);
+    assert.ok(regions, 'This call reviews structure, not answers');
+    structureReviews.push(regions);
+    const reviewed = structureReviews.length === 1 ? [] : regions.map(region => {
+      const expected = structureExpected.find(question => region.prompts.some(text => text.text === question.label));
+      return { id: region.id, prompt: region.prompts.find(text => text.text === expected.label).id,
+        options: region.options.map((option, i) => ({ id: option.id, textId: option.texts.find(text => text.text === expected.options[i]).id })) };
+    });
+    await route.fulfill({ json: { choices: [{ finish_reason: 'stop', message: { content: JSON.stringify({ regions: reviewed }) } }] } });
+  });
   await demo.goto(structureUrl);
   await demo.bringToFront();
   await panel.evaluate(() => { document.querySelector('#auto-submit').checked = false; document.querySelector('#start-btn').click(); });
@@ -1072,6 +1200,7 @@ try {
   assert.equal(structuredAnswers.length, 1, await panel.locator('#status').textContent());
   assert.deepEqual(structuredAnswers[0].state.fields.map(field => ({ label: field.label, options: field.options.map(option => option.label) })), structureExpected);
   assert.equal(structureCalls.length, 2, 'only uncertain regions should get one expanded retry');
+  assert.equal(structureReviews.length, 2, 'both low-confidence scans must reach DeepSeek; it can resolve the expanded evidence');
   assert.equal(structureCalls[0].state.regions.length, 4, 'ARIA group with explicit semantics should use the fast path');
   assert.equal(structureCalls[1].state.regions.length, 3, 'ignored article tools should remain cached');
   assert.equal(await demo.locator('input:checked,[aria-checked=true],[aria-pressed=true],a.selected').count(), 5);
@@ -1094,7 +1223,7 @@ try {
   assert.equal(rejected.ok, false);
   assert.match(rejected.error, /结构发生变化/);
   assert.deepEqual(errors, []);
-  console.log('PASS: unbranded ARIA, split-column, button and link choices use semantic binding; unknown tools are ignored, low confidence expands once, selections persist, cache is local and stale structure is rejected');
+  console.log('PASS: unbranded ARIA, split-column, button and link choices use semantic binding; low confidence reaches mocked DeepSeek, incomplete evidence expands once, selections persist and stale structure is rejected');
 
   const clozeUrl = 'http://127.0.0.1:4173/quiz/inline-gaps.html';
   await context.route(clozeUrl, route => route.fulfill({ contentType: 'text/html; charset=utf-8', body: `<!doctype html><html><body>
@@ -1127,6 +1256,25 @@ try {
   assert.deepEqual(boundCloze.page.fields[2].options.map(option => option.label), ['walk', 'walks']);
   assert.equal(await demo.locator('input').evaluateAll(nodes => nodes.every(node => !node.value)), true);
   console.log('PASS: inline questions preserve surrounding text and distinguish multiple blanks; native select labels remain intact and incomplete bindings cannot be written');
+  assert.equal(boundCloze.page.bridgeVersion, manifest.version);
+  await panel.evaluate(() => {
+    window.originalSendMessage = chrome.tabs.sendMessage;
+    chrome.tabs.sendMessage = async (...args) => {
+      const response = await window.originalSendMessage.apply(chrome.tabs, args);
+      if (args[1]?.type === 'JEV_SCAN') delete response.bridgeVersion;
+      return response;
+    };
+    document.querySelector('#scan-btn').click();
+  });
+  await panel.waitForFunction(() => !document.querySelector('#scan-btn').disabled);
+  assert.match(await panel.locator('#status').textContent(), /旧扫描脚本.*刷新目标网页/);
+  await panel.evaluate(() => {
+    chrome.tabs.sendMessage = window.originalSendMessage;
+    document.querySelector('#scan-btn').click();
+  });
+  await panel.waitForFunction(() => !document.querySelector('#scan-btn').disabled);
+  assert.doesNotMatch(await panel.locator('#status').textContent(), /旧扫描脚本/);
+  console.log('PASS: an outdated injected scanner is rejected with a refresh instruction; the matching scanner remains usable');
 } finally {
   await context?.close();
   server?.kill();

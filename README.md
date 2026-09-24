@@ -9,7 +9,13 @@
 [![Release](https://img.shields.io/github/v/release/Babulubobo/formpilot?style=flat-square&color=444444)](https://github.com/Babulubobo/formpilot/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-444444?style=flat-square)](LICENSE)
 
-[Installation](#installation) · [Get started](#get-started) · [FAQ](#faq) · [Developer guide (中文)](docs/DEVELOPMENT.md)
+[Demo](#demo) · [Installation](#installation) · [Get started](#get-started) · [FAQ](#faq) · [Developer guide (中文)](docs/DEVELOPMENT.md)
+
+## Demo
+
+FormPilot answering an HTML5 quiz and moving between questions.
+
+![FormPilot answering questions and advancing through an HTML5 quiz](docs/assets/formpilot-demo.gif)
 
 ## Features
 

@@ -1,12 +1,14 @@
 (() => {
   if (window.__jevFormBridge) return;
   window.__jevFormBridge = true;
+  const bridgeVersion = chrome.runtime.getManifest?.().version || 'test';
 
   const ids = new WeakMap();
   let sequence = 0;
   let fields = new Map();
   let buttons = new Map();
   const structures = new Map();
+  const confirmedGroups = new Map();
   const expanded = new Set();
   let pending = new Map();
   let revision = 0;
@@ -23,7 +25,22 @@
   const visible = (node) => {
     if (!node.isConnected || node.closest('[hidden], [inert], [aria-hidden="true"]')) return false;
     const style = getComputedStyle(node);
-    return !['hidden', 'collapse'].includes(style.visibility) && style.display !== 'none' && style.opacity !== '0' && node.getClientRects().length > 0;
+    if (['hidden', 'collapse'].includes(style.visibility) || style.display === 'none' || !node.getClientRects().length) return false;
+    for (let ancestor = node; ancestor; ancestor = ancestor.parentElement) {
+      const ancestorStyle = ancestor === node ? style : getComputedStyle(ancestor);
+      if (ancestorStyle.opacity === '0') return false;
+      // Closed fixed drawers cannot be reached by scrolling the document.
+      // Ordinary fields below the fold must remain discoverable.
+      if (ancestorStyle.position === 'fixed') {
+        const rect = ancestor.getBoundingClientRect();
+        const viewport = document.documentElement;
+        // A reserved scrollbar gutter can sit inside innerWidth/clientWidth.
+        const right = Math.min(innerWidth, viewport.clientWidth, viewport.getBoundingClientRect().right);
+        if (rect.width > 0 && rect.height > 0 && (rect.right <= 0 || rect.bottom <= 0
+          || rect.left >= right || rect.top >= Math.min(innerHeight, viewport.clientHeight))) return false;
+      }
+    }
+    return true;
   };
   const editable = (node) => (visible(node) || node.matches('input[type="radio"], input[type="checkbox"]')
     && !node.closest('[hidden], [inert], [aria-hidden="true"]') && [...node.labels].some(visible))
@@ -139,18 +156,18 @@
     label: node.tagName === 'OPTION' ? clean(node.label || node.textContent)
       : node.matches('[role="radio"]') && node.tagName !== 'INPUT' ? explicitLabel(node) || sourceText(node) : labelFor(node),
   }));
-  const valueFor = ({ node, type, nodes, quiz, custom }) => {
+  const valueFor = ({ node, type, nodes, quiz, custom, optionIds }) => {
     if (type === 'checkbox') return node.checked;
     if (type === 'radio') {
       const checked = nodes.find((option) => quiz ? option.matches('.correct, .incorrect') : custom
         ? option.matches('[aria-checked="true"], [aria-pressed="true"], [data-selected="true"], .selected, .active') : option.checked);
-      return checked ? idFor(checked) : '';
+      return checked ? optionIds?.[nodes.indexOf(checked)] || idFor(checked) : '';
     }
     if (type === 'select') return node.value && node.selectedOptions.length ? idFor(node.selectedOptions[0]) : '';
     return node.value;
   };
 
-  const interactive = 'input, select, textarea, button, a[href], [role="radio"], [role="button"]';
+  const interactive = 'input, select, textarea, button, a[href], [role="link"], [role="radio"], [role="button"]';
   const nonQuestion = 'nav, header, footer, [role="navigation"], [role="search"], [role="toolbar"]';
   const commonParent = nodes => {
     let parent = nodes[0].parentElement;
@@ -159,9 +176,30 @@
   };
   const explicitLabel = node => clean(node.getAttribute('aria-label')) || clean((node.getAttribute('aria-labelledby') || '').split(/\s+/)
     .map(id => visibleText(document.getElementById(id))).join(' '));
+  const buttonLabel = node => clean(node.getAttribute('aria-label')) || clean(node.innerText || node.value || node.textContent);
+  const buttonKind = node => {
+    // Toggle/radio semantics take priority: "Next" can itself be an answer.
+    if (!node.matches('button, input[type="submit"], input[type="button"], a, [role="button"]')
+      || node.matches('[role="radio"], [aria-pressed], [aria-checked]')) return 'other';
+    const label = buttonLabel(node).replace(/^[\s←→‹›«»]+|[\s←→‹›«»]+$/g, '');
+    if (/^(next(?:\s+(?:step|page|question))?|continue|下一(?:步|页|题)|继续)$/i.test(label)) return 'next';
+    if (/^(prev(?:ious)?(?:\s+(?:step|page|question))?|back|上一(?:步|页|题)|返回|后退)$/i.test(label)) return 'previous';
+    if (node.type === 'submit' && node.form || /^(submit(?:\s+(?:application|form|response|quiz|test|answers))?|send(?:\s+(?:application|response))?|提交(?:申请|表单|问卷|测验|测试|答案)?|发送|完成(?:测验|测试|考试)?|finish(?:\s+(?:quiz|test|exam))?)[.!！。\s]*$/i.test(label)) return 'submit';
+    if (/^(check(?:\s+answers?)?|检查(?:答案)?|核对答案)$/i.test(label)) return 'check';
+    return 'other';
+  };
   const sourceText = node => node.nodeType === Node.TEXT_NODE
     ? visible(node.parentElement) ? clean(node.textContent) : ''
     : visible(node) ? (node.innerText || '').trim().slice(0, 2000) : '';
+  const pathFor = node => {
+    const path = [];
+    for (; node.parentNode; node = node.parentNode) path.unshift([...node.parentNode.childNodes].indexOf(node));
+    return path;
+  };
+  const atPath = path => path.reduce((node, index) => node?.childNodes[index], document);
+  const layoutOf = node => node && [node.nodeName, node.getAttribute?.('class'), node.getAttribute?.('role'),
+    node.getAttribute?.('type'), node.getAttribute?.('aria-label'), node.getAttribute?.('aria-labelledby'),
+    [...(node.children || [])].map(layoutOf)];
   const suspicious = (text, node) => !text || text === '未命名字段' || text === node.name || text === node.id || /^(?:chk|opt|input|field|radio)[\w-]*\d+$/i.test(text);
 
   function inlinePrompt(node) {
@@ -221,21 +259,30 @@
     nodes.forEach(node => {
       for (const label of node.labels || []) add(label);
       for (const id of (node.getAttribute('aria-labelledby') || '').split(/\s+/)) if (id) add(document.getElementById(id));
-      if (entry.custom) add(node);
+      if (entry.custom) {
+        add(node);
+        node.querySelectorAll('span,p,code,label,strong').forEach(add);
+      }
     });
     const position = (source, target) => {
       const rect = (source.nodeType === Node.TEXT_NODE ? source.parentElement : source).getBoundingClientRect();
       const base = target.getBoundingClientRect();
       return { dx: Math.round(rect.x - base.x), dy: Math.round(rect.y - base.y) };
     };
-    const texts = [...sources].map(([id, { node, text }]) => ({ id, text, ...position(node, nodes[0]) }));
+    const uniqueTexts = texts => [...new Map(texts.map(text => [clean(text.text), text])).values()];
+    const texts = [...sources].filter(([, source]) => source.prompt || !nodes.some(node => node.contains(source.node) || source.node.contains(node)))
+      .map(([id, { node, text }]) => ({ id, text, ...position(node, nodes[0]) }));
     const options = field.options ? field.options.map((option, index) => ({ id: option.id, currentLabel: option.label,
       texts: entry.type === 'select' ? [{ id: option.id, text: option.label, dx: 0, dy: 0 }]
-        : [...sources].map(([id, source]) => ({ id, text: source.text, ...position(source.node, nodes[index] || nodes[0]) }))
-        .sort((a, b) => Math.abs(a.dy) * 3 + Math.abs(a.dx) - Math.abs(b.dy) * 3 - Math.abs(b.dx)).slice(0, wide ? 16 : 8),
+        : uniqueTexts([...sources].filter(([, source]) => entry.custom ? nodes[index].contains(source.node)
+          || [...(nodes[index].labels || [])].some(label => label.contains(source.node))
+          || (nodes[index].getAttribute('aria-labelledby') || '').split(/\s+/).some(id => id && document.getElementById(id)?.contains(source.node))
+          : !nodes.some((node, i) => i !== index && (node.contains(source.node) || source.node.contains(node))))
+          .map(([id, source]) => ({ id, text: source.text, ...position(source.node, nodes[index] || nodes[0]) }))
+          .sort((a, b) => Math.abs(a.dy) * 3 + Math.abs(a.dx) - Math.abs(b.dy) * 3 - Math.abs(b.dx))).slice(0, wide ? 16 : 8),
     })) : [];
     const candidate = { id: field.id, custom: Boolean(entry.custom && !entry.node.matches('[role="radio"]')), currentLabel: field.label,
-      prompts: texts.filter(text => sources.get(text.id).prompt || !nodes.some(node => node.contains(sources.get(text.id).node))).slice(0, wide ? 32 : 16), options };
+      prompts: uniqueTexts(texts).slice(0, wide ? 32 : 16), options };
     // Text and element identities determine freshness; scrolling/hovering must
     // not invalidate cached associations or trigger another API call.
     const key = JSON.stringify(candidate, (name, value) => ['dx', 'dy'].includes(name) ? undefined : value);
@@ -245,6 +292,7 @@
       structures.set(field.id, cached);
     }
     candidate.revision = cached.revision;
+    cached.sources = sources;
     pending.set(field.id, candidate);
     return { candidate, cached };
   }
@@ -263,7 +311,25 @@
         label: option.texts.find(text => text.id === resolution.options?.find(value => value.id === option.id)?.textId)?.text }));
       if (!prompt || options.some(option => !option.label || clean(option.label) === clean(prompt))
         || (options.length && new Set(options.map(option => clean(option.label))).size !== options.length)) continue;
-      structures.get(candidate.id).resolved = { label: prompt, options };
+      const cached = structures.get(candidate.id);
+      cached.resolved = { label: prompt, options };
+      if (candidate.custom) {
+        const { nodes } = fields.get(candidate.id);
+        const root = commonParent(nodes);
+        const bindings = [resolution.prompt, ...resolution.options.map(option => option.textId)].map(id => cached.sources.get(id));
+        const layoutRoot = commonParent([bindings[0].node, ...nodes]);
+        // ponytail: reuse exact local layouts in this document only. A changed
+        // layout or missing text goes back to model-based structural identification.
+        const template = layoutRoot !== document.body && !root.contains(bindings[0].node)
+          && bindings.slice(1).every((source, index) => nodes[index].contains(source.node))
+          ? { path: pathFor(layoutRoot), shape: JSON.stringify(layoutOf(layoutRoot)) } : null;
+        // Keep preceding visible context too, so a changed question number or
+        // heading gives an otherwise identical question a fresh identity.
+        bindings.push(...[...cached.sources.values()].filter(source => !source.node.contains(root)
+          && (root.compareDocumentPosition(source.node) & Node.DOCUMENT_POSITION_PRECEDING)));
+        confirmedGroups.set(JSON.stringify(pathFor(root)), { id: candidate.id, ...cached.resolved, template,
+          nodes: nodes.map(pathFor), anchors: bindings.map(source => ({ path: pathFor(source.node), text: source.text })) });
+      }
     }
     return { ok: true };
   }
@@ -280,8 +346,13 @@
     const scanned = [];
     const errors = [];
     const visited = new Set();
-    const controls = Array.from((bixTest || scope).querySelectorAll(bixTest ? '.bix-tbl-options input[type="radio"]' : 'input, textarea, select, [role="radio"]'))
-      .filter(node => editable(node) && !searchField(node) && !node.closest(nonQuestion));
+    const allControls = Array.from((bixTest || scope).querySelectorAll(bixTest ? '.bix-tbl-options input[type="radio"]' : 'input, textarea, select, [role="radio"]'));
+    // Quizzes lock graded radio groups. Keep their visible answers readable so
+    // checking an answer does not make the question disappear from the runner.
+    const lockedAnswers = allControls.filter(node => node.matches('input[type="radio"]:disabled') && node.checked && visible(node));
+    const controls = allControls.filter(node => (editable(node) || node.matches('input[type="radio"]:disabled') && visible(node)
+      && lockedAnswers.some(answer => answer === node || node.name && answer.name === node.name && answer.form === node.form))
+      && !searchField(node) && !node.closest(nonQuestion));
     for (const node of controls) {
       if (visited.has(node)) continue;
       const type = kindFor(node);
@@ -343,8 +414,12 @@
       // Repeated clickable siblings are only candidates. A semantic decision
       // must confirm they form a question before any of them can be clicked.
       const used = new Set([...fields.values()].flatMap(entry => entry.nodes));
-      const clicks = [...scope.querySelectorAll('button, [role="button"], a[href="#"], a:not([href])')]
-        .filter(node => editable(node) && !node.closest(nonQuestion) && !used.has(node) && !(node.type === 'submit' && node.form));
+      const clickSelector = 'button, [role="button"], a[href="#"], a:not([href]), [onclick], [tabindex], div, li, span';
+      const clicks = [...scope.querySelectorAll(clickSelector)]
+        .filter(node => editable(node) && !node.closest(nonQuestion) && !used.has(node) && buttonKind(node) === 'other'
+          && !node.closest('[role="link"], [role="heading"], a[href]:not([href=""]):not([href="#"]):not([href^="javascript:"])')
+          && !node.querySelector(interactive) && (node.matches('button,[role="button"],a,[onclick]')
+            || getComputedStyle(node).cursor === 'pointer' && getComputedStyle(node.parentElement).cursor !== 'pointer'));
       const groups = new Set();
       for (const click of clicks) {
         for (let parent = click.parentElement, depth = 0; parent && parent !== document.body && depth < 3; parent = parent.parentElement, depth++) {
@@ -355,11 +430,36 @@
           if (rows.length !== nodes.length || groups.has(parent)) break;
           groups.add(parent);
           nodes.forEach(node => used.add(node));
-          const id = idFor(nodes[0]);
-          const entry = { node: nodes[0], nodes, type: 'radio', custom: true };
+          const key = JSON.stringify(pathFor(commonParent(nodes)));
+          let confirmed = confirmedGroups.get(key);
+          if (confirmed && (confirmed.nodes.length !== nodes.length || confirmed.nodes.some((path, i) => atPath(path) !== nodes[i])
+            || confirmed.anchors.some(({ path, text }) => { const node = atPath(path); return !node || sourceText(node) !== text; }))) {
+            const texts = confirmed.anchors.map(({ path }) => { const node = atPath(path); return node ? sourceText(node) : ''; });
+            const labels = texts.slice(1, nodes.length + 1);
+            const reusable = confirmed.template && confirmed.nodes.length === nodes.length
+              && confirmed.nodes.every((path, i) => atPath(path) === nodes[i])
+              && JSON.stringify(layoutOf(atPath(confirmed.template.path))) === confirmed.template.shape
+              && texts.every(Boolean) && !suspicious(texts[0], nodes[0])
+              && labels.every((label, i) => !suspicious(label, nodes[i]) && clean(label) !== clean(texts[0]))
+              && new Set(labels.map(clean)).size === nodes.length;
+            ids.delete(nodes[0]);
+            if (reusable) {
+              confirmed = { ...confirmed, id: idFor(nodes[0]), label: texts[0],
+                options: nodes.map((node, i) => ({ id: idFor(node), label: labels[i] })),
+                anchors: confirmed.anchors.map((anchor, i) => ({ ...anchor, text: texts[i] })) };
+              confirmedGroups.set(key, confirmed);
+            } else {
+              confirmedGroups.delete(key);
+              confirmed = null;
+            }
+          }
+          const id = confirmed?.id || idFor(nodes[0]);
+          const options = confirmed?.options || nodes.map(node => ({ id: idFor(node), label: sourceText(node) }));
+          const entry = { node: nodes[0], nodes, type: 'radio', custom: true, confirmed: Boolean(confirmed),
+            optionIds: options.map(option => option.id) };
           fields.set(id, entry);
-          scanned.push({ id, label: groupLabel(nodes[0], nodes), type: 'radio', required: false, value: valueFor(entry), group: '', description: '',
-            options: nodes.map(node => ({ id: idFor(node), label: sourceText(node) })) });
+          scanned.push({ id, label: confirmed?.label || groupLabel(nodes[0], nodes), type: 'radio', required: false,
+            value: valueFor(entry), group: '', description: '', options });
           break;
         }
       }
@@ -377,7 +477,7 @@
       if (field.type === 'radio' && (labels.includes(field.label) || promptCounts.get(field.label) > 1)) issues.push('ambiguous_prompt');
       if (field.options && (new Set(labels).size !== labels.length || labels.some((label, i) => suspicious(label, entry.nodes[i] || entry.node)))) issues.push('unreadable_options');
       if (entry.custom && !entry.node.matches('[role="radio"]')) issues.push('custom_choices');
-      if (!issues.length || entry.quiz) continue;
+      if (!issues.length || entry.quiz || entry.confirmed) continue;
       const { candidate, cached } = structureFor(field, entry);
       if (cached.resolved?.ignore) {
         scanned.splice(index, 1);
@@ -392,18 +492,19 @@
       }
     }
 
+    for (const field of scanned) fields.get(field.id).snapshot = field;
+
     const scannedButtons = [];
     for (const node of scope.querySelectorAll(bixTest ? '#btnStartTest, #btnSubmitTest' : 'button, input[type="submit"], input[type="button"], [role="button"], #quiz-start-btn, #quiz-next-btn, #quiz-finish-btn')) {
       if (!editable(node)) continue;
       if ([...fields.values()].some(entry => entry.custom && entry.nodes.includes(node))) continue;
-      const label = clean(node.getAttribute('aria-label')) || clean(node.innerText || node.value || node.textContent);
+      const label = buttonLabel(node);
       if (!label) continue;
       // ponytail: explicit text covers ordinary forms; custom workflows need their own adapter.
       const kind = (quiz && node.id === 'quiz-start-btn') || (bixTest && node.id === 'btnStartTest') ? 'start'
         : quiz && node.id === 'quiz-next-btn' ? 'next'
         : (quiz && node.id === 'quiz-finish-btn') || (bixTest && node.id === 'btnSubmitTest') ? 'submit'
-        : /^(next(?:\s+(?:step|page|question))?|continue|下一(?:步|页|题)|继续)[\s→›»]*$/i.test(label) ? 'next'
-        : node.type === 'submit' && node.form || /^(submit(?:\s+(?:application|form|response))?|send(?:\s+(?:application|response))?|提交(?:申请|表单|问卷)?|发送|完成|finish)[.!！。\s]*$/i.test(label) ? 'submit' : 'other';
+        : buttonKind(node);
       const id = idFor(node);
       buttons.set(id, node);
       scannedButtons.push({ id, label, kind });
@@ -414,7 +515,7 @@
     if (Array.from(document.querySelectorAll('iframe')).some(visible)) notices.push('当前仅支持主页面，不读取 iframe 内的表单。');
     if (document.querySelector('[role="combobox"]:not(select), [role="textbox"]:not(input):not(textarea), [role="checkbox"]:not(input), select[multiple]')) notices.push('自定义控件与多选下拉框需要手动填写。');
     return {
-      url: location.href, title: document.title, context: quiz ? clean(quiz.querySelector('h1')?.innerText) : bixTest ? visibleText(document.querySelector('h1')) : contextFor(scanned), fields: scanned, buttons: scannedButtons,
+      bridgeVersion, url: location.href, title: document.title, context: quiz ? clean(quiz.querySelector('h1')?.innerText) : bixTest ? visibleText(document.querySelector('h1')) : contextFor(scanned), fields: scanned, buttons: scannedButtons,
       demo, quiz: Boolean(quiz || bixTest), completed: demo && document.documentElement.dataset.jevComplete === 'true' ||
         Boolean(bixTest && visibleText(document.querySelector('#testResultStats'))) ||
         Boolean(quiz?.classList.contains('quiz-results-state') && quiz.querySelector('#quiz-results-screen') && visible(quiz.querySelector('#quiz-results-screen'))),
@@ -441,7 +542,7 @@
       if (typeof value !== 'boolean') throw new Error('复选框的值必须是布尔值。');
       if (node.checked !== value) node.click();
     } else if (type === 'radio') {
-      const option = nodes.find((item) => idFor(item) === value);
+      const option = nodes.find((item, index) => (entry.optionIds?.[index] || idFor(item)) === value);
       if (!option || !editable(option)) throw new Error('选项已变化或不可选择。');
       if (valueFor(entry) !== value) option.click();
     } else if (type === 'select') {
@@ -454,8 +555,16 @@
       setNative(node, 'value', value);
     }
     await new Promise((resolve) => setTimeout(resolve, 50));
-    if (!node.isConnected) throw new Error('页面更新了字段，请重新扫描确认填写结果。');
-    const actual = valueFor(entry);
+    if (!node.isConnected && !entry.custom) throw new Error('页面更新了字段，请重新扫描确认填写结果。');
+    let actual = valueFor(entry);
+    if (entry.custom) {
+      const current = scan().fields.find(field => field.id === fieldId);
+      if (!current || current.scanIssues?.length || current.label !== entry.snapshot.label
+        || JSON.stringify(current.options) !== JSON.stringify(entry.snapshot.options)) {
+        throw new Error('页面更新了字段，请重新扫描确认填写结果。');
+      }
+      actual = current.value;
+    }
     if (actual !== value) throw new Error('网页未保留填写结果，请重新扫描。');
     if (entry.quiz) {
       // Runoob fades this area in; advancing during that animation can leave
