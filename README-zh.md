@@ -41,21 +41,6 @@ Release 附件请选择 **FormPilot-chrome.zip**。GitHub 自动提供的 **Sour
 
 设置会保存在当前浏览器，之后打开题目页即可开始。需要自动提交时，在运行选项中勾选「允许最终提交」；该选择只在当前侧栏会话中生效。
 
-<details>
-<summary>没有 API Key？先体验本地演示</summary>
-
-演示页包含在 [完整源码 ZIP](https://github.com/Babulubobo/formpilot/archive/refs/heads/main.zip) 中。下载并解压源码、安装 Node.js 后，在项目目录运行：
-
-```sh
-npm run demo
-```
-
-打开 [本地演示问卷](http://127.0.0.1:4173/demo/)，点击 FormPilot 图标。在「运行选项」中选择「本地演示（不调用 AI）」，再到「参考资料」点击「载入示例资料」，然后开始填写。
-
-演示包含 2 页、16 道题，使用固定规则与虚构资料，不调用模型，不能代表 AI 的速度或准确率。
-
-</details>
-
 ## 常见问题
 
 <details>
@@ -70,7 +55,7 @@ npm run demo
 
 TypeSafe 的 JEV 先判断题目和选项；遇到不确定或跳过的选择题，会把题干与全部选项交给 DeepSeek 再判断。文字题也由 DeepSeek 回答。具体调用原因可以在「执行记录」中查看。
 
-AI 模式需要配置自己的服务密钥，API 用量由对应服务计费；本地演示模式不调用这些服务。
+AI 模式需要配置自己的服务密钥，API 用量由对应服务计费。
 
 </details>
 

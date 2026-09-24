@@ -6,16 +6,7 @@ FormPilot 是 Chrome Manifest V3 侧栏扩展。生产运行没有 npm 依赖，
 
 ## 本地运行
 
-在项目目录启动演示服务器：
-
-```sh
-npm run demo
-```
-
-服务器只监听 `127.0.0.1:4173`，提供演示页面和扩展静态文件。
-
-- [演示问卷](http://127.0.0.1:4173/demo/)：2 页、16 道题、18 个可填写字段，兴趣题包含 3 个独立复选框。在侧栏选择「本地演示（不调用 AI）」并载入示例资料即可体验。固定规则与虚构资料不代表模型表现。
-- [空资料答题页](http://127.0.0.1:4173/demo/knowledge.html)：包含知识题、方案、试用理由、页面理解选择题和未知邮箱。参考资料可以留空；此页没有固定演示答案，需要配置 Key 并使用「AI 自动填写」。
+在 `chrome://extensions` 开启开发者模式，加载项目中的 `extension/` 文件夹，然后打开需要填写的网页。
 
 修改扩展后，在 `chrome://extensions` 中重新加载 FormPilot，再刷新测试网页并重新打开侧栏。沿用原来的加载目录，以保留扩展本机数据。
 
@@ -127,10 +118,9 @@ gh release create v0.2.0 FormPilot-chrome.zip --target "$(git rev-parse HEAD)" -
 
 - `extension/manifest.json` / `background.js`：权限、侧栏入口与存储隔离。
 - `extension/content.js`：页面读取、结构候选、填写与点击。
-- `extension/brain.js`：演示规则、结构判断、JEV 答题与 DeepSeek 生成及复核。
+- `extension/brain.js`：结构判断、JEV 答题与 DeepSeek 生成及复核。
 - `extension/runner.js`：填写校验、翻页、停止与提交控制。
 - `extension/sidepanel.*` / `i18n.js` / `_locales/`：侧栏与中英文本地化。
-- `demo/`：本地问卷和知识题页面。
 - `tests/`：Node 测试与浏览器验证。
 - `jev.mjs`：独立 TypeSafe API 示例。
 

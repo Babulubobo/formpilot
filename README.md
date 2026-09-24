@@ -41,21 +41,6 @@ In the release assets, choose **FormPilot-chrome.zip**. GitHub's **Source code**
 
 Your settings are saved in this browser for future runs. To enable automatic submission, check **Allow submit** under Run options. This permission applies only to the current side panel session.
 
-<details>
-<summary>No API keys yet? Try the local demo</summary>
-
-The demo is included in the [source repository ZIP](https://github.com/Babulubobo/formpilot/archive/refs/heads/main.zip). Download and extract the source, install Node.js, then run this command in the project directory:
-
-```sh
-npm run demo
-```
-
-Open the [local demo form](http://127.0.0.1:4173/demo/) and click the FormPilot icon. Under **Run options**, select **Local demo (no AI)**. Open **Reference details**, click **Load sample**, then start filling.
-
-The demo contains 16 questions across 2 pages. It uses fixed rules and fictional details, makes no model calls, and does not represent AI speed or accuracy.
-
-</details>
-
 ## FAQ
 
 <details>
@@ -70,7 +55,7 @@ All reference details are optional. The models answer knowledge questions, fill-
 
 TypeSafe's JEV evaluates questions and options first. If it is uncertain or skips a choice question, FormPilot sends the question and all its options to DeepSeek for another attempt. DeepSeek also answers text questions. You can see the reason for each call in the **Activity log**.
 
-AI mode requires your own service keys, and the respective providers charge for API usage. Local demo mode does not call these services.
+AI mode requires your own service keys, and the respective providers charge for API usage.
 
 </details>
 
