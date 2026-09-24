@@ -422,7 +422,7 @@ test('non-required radio questions cannot advance when skipped, omitted, rejecte
 });
 
 test('a completely skipped optional page cannot be navigated or submitted', async () => {
-  for (const kind of ['next', 'submit']) {
+  for (const kind of ['next', 'submit', 'check']) {
     const state = page([field('short-answer', { type: 'textarea' }), field('unknown-email', { type: 'email' })], {
       buttons: [{ id: 'continue', label: kind, kind }],
     });
@@ -457,17 +457,19 @@ test('abort after planning or first write prevents subsequent writes and clicks'
   }
 });
 
-test('a next button that makes no progress is clicked only once', async () => {
-  const state = page([field('name', { value: 'Filled' })], {
-    buttons: [{ id: 'next', label: 'Next', kind: 'next' }],
-  });
-  let clicked = 0;
-  const result = await runForm({
-    scan: async () => snapshot(state), plan: async () => assert.fail('No planning needed'),
-    apply: async () => assert.fail('No filling needed'),
-    click: async () => { clicked++; return { ok: true }; },
-    autoNext: true, wait: noWait,
-  });
-  assert.equal(clicked, 1);
-  assert.equal(result.status, 'needs-review');
+test('a navigation or check button that makes no progress is clicked only once', async () => {
+  for (const kind of ['next', 'check']) {
+    const state = page([field('name', { value: 'Filled' })], {
+      buttons: [{ id: kind, label: kind, kind }],
+    });
+    let clicked = 0;
+    const result = await runForm({
+      scan: async () => snapshot(state), plan: async () => assert.fail('No planning needed'),
+      apply: async () => assert.fail('No filling needed'),
+      click: async () => { clicked++; return { ok: true }; },
+      autoNext: true, wait: noWait,
+    });
+    assert.equal(clicked, 1);
+    assert.equal(result.status, 'needs-review');
+  }
 });

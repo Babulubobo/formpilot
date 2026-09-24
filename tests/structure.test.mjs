@@ -48,3 +48,56 @@ test('runner refuses to answer or navigate when structural quality is unresolved
   assert.equal(result.filled, 0);
   assert.match(result.message, /题干或选项/);
 });
+
+test('failed structural decisions report the gate that blocked them without exposing credentials', async () => {
+  const events = [];
+  const result = await resolveStructure(regions, settings, { onEvent: message => events.push(message),
+    fetchImpl: async () => ({ ok: true, json: async () => ({ answers: { s0: choice('p', 0.62) } }) }),
+  });
+  assert.deepEqual(result, []);
+  assert.match(events.join('\n'), /0\.620.*0\.85/);
+  assert.ok(!events.join('\n').includes(settings.typesafeKey));
+  await assert.rejects(resolveStructure(regions, settings, {
+    fetchImpl: async () => ({ ok: true, json: async () => ({}) }),
+  }), /TypeSafe/);
+});
+
+test('low structural confidence escalates only unresolved regions to DeepSeek and preserves source bindings', async () => {
+  const tools = { ...regions[0], id: 'tools', currentLabel: 'Article tools' };
+  const confident = { ...regions[0], id: 'confident' };
+  const calls = [];
+  const result = await resolveStructure([...regions, tools, confident], { ...settings, deepseekKey: 'test-deepseek', deepseekModel: 'deepseek-pro' }, {
+    fetchImpl: async (url, init) => {
+      const body = JSON.parse(init.body);
+      calls.push(url);
+      if (url.includes('typesafe')) return { ok: true, json: async () => ({ answers: {
+        s0: choice('p', 0.52), s1: choice('ignore', 0.61), s2: choice('p'), s2o0: choice('a-text'), s2o1: choice('b-text'),
+      } }) };
+      assert.equal(init.headers.Authorization, 'Bearer test-deepseek');
+      assert.equal(body.model, 'deepseek-pro');
+      assert.deepEqual(JSON.parse(body.messages[1].content).regions.map(region => region.id), ['field-1', 'tools']);
+      return { ok: true, json: async () => ({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify({ regions: [
+        { id: 'field-1', revision: -1, prompt: 'p', options: [{ id: 'b', textId: 'b-text' }, { id: 'a', textId: 'a-text' }] },
+        { id: 'tools', ignore: true }, { id: 'invented', ignore: true },
+      ] }) } }] }) };
+    },
+  });
+  assert.equal(calls.length, 2);
+  assert.deepEqual(result.map(region => region.id), ['confident', 'field-1', 'tools']);
+  assert.deepEqual(result[1], { id: 'field-1', revision: 4, prompt: 'p', options: [{ id: 'a', textId: 'a-text' }, { id: 'b', textId: 'b-text' }] });
+  assert.deepEqual(result[2], { id: 'tools', revision: 4, ignore: true });
+});
+
+test('DeepSeek structural fallback rejects foreign IDs, partial or duplicate bindings and attempts to ignore native fields', async () => {
+  const valid = { id: 'field-1', prompt: 'p', options: [{ id: 'a', textId: 'a-text' }, { id: 'b', textId: 'b-text' }] };
+  const runReview = (reviewed, finish = 'stop') => resolveStructure([{ ...regions[0], custom: false }], { ...settings, deepseekKey: 'test-deepseek' }, {
+    fetchImpl: async url => ({ ok: true, json: async () => url.includes('typesafe') ? { answers: { s0: choice('p', 0.3) } }
+      : { choices: [{ finish_reason: finish, message: { content: JSON.stringify({ regions: reviewed }) } }] } }),
+  });
+  for (const reviewed of [[], [null], [valid, valid], [{ ...valid, prompt: 'invented' }],
+    [{ ...valid, options: valid.options.slice(0, 1) }], [{ ...valid, options: [valid.options[0], valid.options[0]] }],
+    [{ ...valid, options: [{ id: 'a', textId: 'b-text' }, valid.options[1]] }], [{ id: 'field-1', ignore: true }]]) {
+    assert.deepEqual(await runReview(reviewed), []);
+  }
+  await assert.rejects(runReview([valid], 'length'), /DeepSeek/);
+});

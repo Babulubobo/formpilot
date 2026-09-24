@@ -113,6 +113,28 @@ export async function runForm({ scan, apply, click, plan, signal, autoNext, auto
     const hasAnswer = page.fields.some(f => f.type === 'checkbox'
       ? f.value || handled.get(fieldKey(page, f)) : !isBlank(f));
     if (!hasAnswer) return finish('needs-review', t('本页没有可用答案，已停止自动翻页。请查看各字段的原因。', 'No answers are available on this page. Automatic navigation stopped. Please review the reasons for each field.'));
+    const checks = page.buttons.filter(button => button.kind === 'check');
+    if (!page.buttons.some(button => ['next', 'submit'].includes(button.kind)) && checks.length === 1) {
+      if (!autoNext) return finish('filled', t('本页填写完成，等待你检查答案并继续。', 'This page is filled. Check the answers and continue when ready.'));
+      checkStop(signal);
+      onEvent(t('正在检查本题答案…', 'Checking this question’s answer…'));
+      const checked = await click(checks[0].id);
+      if (!checked.ok) return finish('needs-review', checked.error || t('无法检查答案，请在网页中继续。', 'Could not check the answer. Continue on the webpage.'));
+      let ready = false;
+      for (let attempt = 0; attempt < 20; attempt++) {
+        checkStop(signal);
+        await wait(250);
+        checkStop(signal);
+        try { page = await scan(); } catch (error) { if (attempt === 19) throw error; else continue; }
+        checkStop(signal);
+        if (new URL(page.url).origin !== origin) return finish('needs-review', t('页面跳转到其他网站，已停止。', 'The page moved to another website. Execution has stopped.'));
+        if (page.completed) return finish('complete', completionMessage(page));
+        if (signature(page) !== before || page.buttons.some(button => ['next', 'submit'].includes(button.kind))) { ready = true; break; }
+      }
+      if (!ready) return finish('needs-review', t('检查后未出现下一步操作，已停止重复点击。请查看网页提示。', 'No next action appeared after checking. Repeated clicks have stopped. Review the webpage.'));
+      if (signature(page) !== before || page.structureCandidates?.length || page.validity?.errors?.length
+        || page.fields.some(f => ['radio', 'select'].includes(f.type) && isBlank(f))) continue;
+    }
     const candidates = page.buttons.filter(b => b.kind === 'next');
     const targets = candidates.length ? candidates : page.buttons.filter(b => b.kind === 'submit');
     if (targets.length !== 1) return finish('filled', t('本页填写完成，请检查页面并继续。', 'This page is filled. Please review it and continue.'));

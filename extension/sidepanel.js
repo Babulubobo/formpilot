@@ -142,6 +142,9 @@ async function scan() {
   const page = await chrome.tabs.sendMessage(targetTab, { type: 'JEV_SCAN' }, { documentId });
   if (page?.error) throw new Error(pageMessage(page.error));
   if (!page || !Array.isArray(page.fields)) throw new Error(t('网页没有返回可识别的表单。', 'The webpage did not return a recognizable form.'));
+  if (page.bridgeVersion !== chrome.runtime.getManifest().version) {
+    throw new Error(t('扩展已更新，但网页仍在使用旧扫描脚本。请刷新目标网页后重新开始。', 'The extension was updated, but this page is still using an old scanner. Refresh the target webpage and restart.'));
+  }
   snapshot = { ...page, notice: pageMessage(page.notice), documentId };
   return snapshot;
 }

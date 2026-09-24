@@ -9,7 +9,13 @@
 [![Release](https://img.shields.io/github/v/release/Babulubobo/formpilot?style=flat-square&color=444444)](https://github.com/Babulubobo/formpilot/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-444444?style=flat-square)](LICENSE)
 
-[安装](#安装) · [开始使用](#开始使用) · [常见问题](#常见问题) · [开发文档](docs/DEVELOPMENT.md)
+[演示](#演示) · [安装](#安装) · [开始使用](#开始使用) · [常见问题](#常见问题) · [开发文档](docs/DEVELOPMENT.md)
+
+## 演示
+
+FormPilot 在 HTML5 测验中自动作答、连续翻题的实际录屏。
+
+![FormPilot 在 HTML5 测验中自动作答并连续翻题](docs/assets/formpilot-demo.gif)
 
 ## 特性
 
